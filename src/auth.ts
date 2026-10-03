@@ -11,6 +11,9 @@ const credentialsSchema = z.object({
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Always deployed behind our own proxy (Caddy or a tunnel) that sets the
+  // public host; trust it even when AUTH_URL is not set.
+  trustHost: true,
   session: { strategy: "jwt", maxAge: 12 * 60 * 60 },
   pages: { signIn: "/login" },
   providers: [
