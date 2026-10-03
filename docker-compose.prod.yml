@@ -64,6 +64,17 @@ services:
     depends_on:
       - app
 
+  # Optional public HTTPS link without a server/domain (Cloudflare quick tunnel):
+  #   docker compose -f docker-compose.prod.yml --env-file .env --profile tunnel up -d app tunnel
+  #   docker compose -f docker-compose.prod.yml --env-file .env logs tunnel | grep trycloudflare
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate --url http://app:3000
+    depends_on:
+      - app
+
 volumes:
   pgdata:
   uploads:
