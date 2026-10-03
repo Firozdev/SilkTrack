@@ -1,0 +1,10 @@
+# SITE_ADDRESS in .env:
+#   ":80"                    → plain HTTP on the server IP (no certificate)
+#   "silktrack.example.com"  → automatic HTTPS once the domain points here
+{$SITE_ADDRESS} {
+	encode gzip
+	request_body {
+		max_size 30MB
+	}
+	reverse_proxy app:3000
+}

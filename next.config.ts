@@ -2,6 +2,8 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Self-contained server bundle for the Docker image.
+  output: "standalone",
   turbopack: { root: path.resolve(__dirname) },
   // Photo / invoice uploads go through server actions.
   experimental: {

@@ -39,3 +39,32 @@ npm run build
 - `src/lib/session.ts` – `requireUser()` / `requirePermission()` for pages and actions
 - `src/lib/permissions.ts` – what each role may do; `redactForRole()` hides selling price/profit from PURCHASE
 - `src/lib/audit.ts` – audit-log helpers
+
+## Branches
+
+- `develop` – day-to-day work (your Mac)
+- `main` – stable, tested code
+- `production` – what the VPS runs. Release: merge `develop` → `main` → `production`, then deploy.
+
+## Production (VPS)
+
+Docker Compose runs PostgreSQL, the app and Caddy (`docker-compose.prod.yml`). The database is not exposed to the internet.
+
+```bash
+# once
+git clone -b production https://github.com/Firozdev/SilkTrack.git silktrack && cd silktrack
+cp .env.production.example .env      # fill in passwords, AUTH_SECRET, AUTH_URL, SITE_ADDRESS
+
+# every release
+./scripts/deploy.sh                  # pull production, build, migrate, restart
+```
+
+- HTTPS: set `SITE_ADDRESS` to your domain (DNS A record → server IP) and `AUTH_URL=https://…`, then `./scripts/deploy.sh`.
+- Backups: `scripts/backup.sh` (database + uploads, 14 days) runs daily from cron.
+- Admin commands on the server use the `tools` container, e.g.:
+  ```bash
+  T="docker compose -f docker-compose.prod.yml --env-file .env run --rm tools"
+  $T npm run user:create -- --email li@example.com --name "Li" --role PURCHASE --password '…'
+  $T npm run user:password -- --email admin@silktrack.local --password '…'
+  $T npm run user:allow-selling -- --email li@example.com
+  ```
