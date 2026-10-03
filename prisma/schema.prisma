@@ -1,0 +1,1180 @@
+// SilkTrack – data model for every module in docs/requirements.md.
+//
+// Conventions
+// - `id` is a cuid; `number` is a human-friendly sequence shown with a prefix
+//   in the UI (REQ-000123, PUR-…, EST-…, RCV-…, INV-…, DLV-…, ISS-…, CLM-…).
+// - Money: Decimal(14,2). Exchange rates: Decimal(12,4) (1 RMB = X BDT).
+//   Weight kg: Decimal(10,3). CBM: Decimal(10,4). Dimensions cm: Decimal(8,2).
+// - Anything converted between RMB and BDT stores the RMB amount, the rate used
+//   (`rateUsed` + `exchangeRateId`) and the BDT amount side by side, so later
+//   rate changes never alter past records.
+// - Field names ending in `Bdt` that are selling price / margin / profit are
+//   hidden from the PURCHASE role (see src/lib/permissions.ts).
+// - All DateTime values are stored in UTC; users see them in User.timezone.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum Role {
+  ADMIN
+  CS
+  PURCHASE
+}
+
+enum Locale {
+  EN
+  BN
+  ZH_CN
+}
+
+enum OrderType {
+  SINGLE
+  BULK
+}
+
+enum ShippingMethod {
+  AIR
+  SEA
+}
+
+enum Platform {
+  ALIBABA_1688
+  TAOBAO
+  ALIBABA
+  TMALL
+  OTHER
+}
+
+enum Currency {
+  RMB
+  BDT
+}
+
+/// Overall order / order-line lifecycle.
+enum OrderStatus {
+  REQUESTED
+  QUOTED
+  APPROVED
+  PURCHASED
+  AT_CHINA_WAREHOUSE
+  IN_SHIPMENT
+  IN_TRANSIT
+  ARRIVED_BD
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  ON_HOLD
+}
+
+/// Module 1 request workflow between CS and China.
+enum RequestStatus {
+  NEW
+  SENT_TO_CHINA
+  /// A sample is in progress (requested after the China quotation).
+  SAMPLING
+  QUOTED
+  CUSTOMER_APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum EstimateStatus {
+  DRAFT
+  SUBMITTED_BY_CHINA
+  REVIEWED_BY_BD
+  SENT_TO_CUSTOMER
+  APPROVED
+  REVISED
+  REJECTED
+}
+
+enum PurchaseStatus {
+  PENDING
+  PURCHASED
+  SHIPPED_BY_SUPPLIER
+  RECEIVED_AT_CHINA_WAREHOUSE
+  OUT_OF_STOCK
+  PRICE_CHANGED
+  REFUND_FROM_SUPPLIER
+}
+
+enum PriceApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ReceivingCondition {
+  OK
+  DAMAGED
+  WRONG_ITEM
+  SHORT
+}
+
+enum ReceivingStatus {
+  READY_TO_SHIP
+  IN_SHIPMENT
+  REPACKED
+  ON_HOLD
+}
+
+enum IssueType {
+  DAMAGED
+  WRONG_ITEM
+  SHORT
+  MISSING
+  WEIGHT_MISMATCH
+  OTHER
+}
+
+enum IssueSource {
+  CHINA_RECEIVING
+  BD_RECEIVING
+  DELIVERY
+}
+
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum ShipmentStatus {
+  UPCOMING
+  OPEN
+  CLOSED
+  DEPARTED
+  IN_TRANSIT
+  ARRIVED_BD
+  CUSTOMS_CLEARED
+  COMPLETED
+}
+
+enum TrackingLeg {
+  SUPPLIER_TO_CHINA
+  CHINA_TO_BD
+  BD_TO_CUSTOMER
+}
+
+enum BdReceivingStatus {
+  PENDING
+  RECEIVED
+  MISSING
+  DAMAGED
+}
+
+enum PaymentType {
+  ADVANCE
+  BALANCE
+  REFUND
+  SAMPLE
+}
+
+enum SampleStatus {
+  REQUESTED
+  INVOICED
+  AWAITING_PAYMENT
+  PAID
+  PURCHASED
+  SHIPPED
+  RECEIVED_BD
+  DELIVERED
+  CANCELLED
+}
+
+enum SampleShippingMode {
+  WEEKLY_SHIPMENT
+  EXPRESS_COURIER
+  HAND_CARRY
+  POST
+  OTHER
+}
+
+enum PaymentMethod {
+  CASH
+  BKASH
+  NAGAD
+  ROCKET
+  BANK_TRANSFER
+  CARD
+  OTHER
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum DeliveryCourier {
+  PATHAO
+  STEADFAST
+  REDX
+  OWN_RIDER
+  OTHER
+}
+
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  RETURNED
+}
+
+enum ClaimDecision {
+  PENDING
+  REFUND
+  REPLACE
+  CREDIT
+  REJECTED
+}
+
+enum ClaimStatus {
+  OPEN
+  RESOLVED
+}
+
+enum NotificationChannel {
+  IN_APP
+  SMS
+  WHATSAPP
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum AttachmentKind {
+  PRODUCT_IMAGE
+  PACKAGE_PHOTO
+  SUPPLIER_INVOICE
+  PROOF_OF_DELIVERY
+  OTHER
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+// ───────────────────────── Users & settings ─────────────────────────
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  name               String
+  passwordHash       String
+  role               Role
+  active             Boolean   @default(true)
+  locale             Locale    @default(EN)
+  /// PURCHASE users only: Admin allows this user to set and see customer
+  /// selling prices (never margin/profit). Ignored for ADMIN and CS.
+  canSetSellingPrice Boolean   @default(false)
+  /// IANA zone, e.g. Asia/Dhaka (BD team) or Asia/Shanghai (China team).
+  timezone           String    @default("Asia/Dhaka")
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  exchangeRates      ExchangeRate[]    @relation("RateUpdatedBy")
+  ordersCreated      Order[]           @relation("OrderCreatedBy")
+  advanceRequests    Order[]           @relation("AdvanceRequestedBy")
+  samplesRequested   Sample[]          @relation("SampleRequestedBy")
+  samplesInvoiced    Sample[]          @relation("SampleInvoicedBy")
+  samplesPurchased   Sample[]          @relation("SamplePurchasedBy")
+  sampleEvents       SampleEvent[]
+  comments           Comment[]
+  attachments        Attachment[]
+  paymentsReceived   Payment[]
+  estimatesCreated   Estimate[]        @relation("EstimateCreatedBy")
+  estimatesReviewed  Estimate[]        @relation("EstimateReviewedBy")
+  supplierOrders     SupplierOrder[]
+  priceApprovals     PurchaseLine[]    @relation("PriceApprovedBy")
+  receivings         Receiving[]
+  issuesReported     Issue[]           @relation("IssueReportedBy")
+  issuesAssigned     Issue[]           @relation("IssueAssignedTo")
+  bdReceivingChecks  BdReceivingItem[]
+  trackingEvents     TrackingEvent[]
+  invoicesIssued     Invoice[]
+  deliveriesAssigned Delivery[]
+  claimsCreated      Claim[]           @relation("ClaimCreatedBy")
+  claimsDecided      Claim[]           @relation("ClaimDecidedBy")
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  settingsUpdated    Setting[]
+}
+
+/// Admin-managed settings: bulk threshold, price-change %, BD weight
+/// tolerance, default local delivery charge, etc. Value shape per key.
+model Setting {
+  key         String   @id
+  value       Json
+  description String?
+  updatedById String?
+  updatedBy   User?    @relation(fields: [updatedById], references: [id])
+  updatedAt   DateTime @updatedAt
+}
+
+// ───────────────────────── Module 4: Exchange rates ─────────────────────────
+
+model ExchangeRate {
+  id            String   @id @default(cuid())
+  /// Calendar day (Asia/Dhaka) the rate applies to.
+  effectiveDate DateTime @unique @db.Date
+  /// 1 RMB = rate BDT
+  rate          Decimal  @db.Decimal(12, 4)
+  buyingRate    Decimal? @db.Decimal(12, 4)
+  sellingRate   Decimal? @db.Decimal(12, 4)
+  note          String?
+  updatedById   String
+  updatedBy     User     @relation("RateUpdatedBy", fields: [updatedById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  estimates      Estimate[]
+  supplierOrders SupplierOrder[]
+  invoices       Invoice[]
+  samples        Sample[]
+}
+
+// ───────────────────────── Module 1: Product requests ─────────────────────────
+
+model Customer {
+  id        String   @id @default(cuid())
+  /// Short code printed on carton labels, e.g. C-00042.
+  code      String   @unique
+  name      String
+  phone     String
+  email     String?
+  address   String
+  district  String?
+  area      String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders        Order[]
+  samples       Sample[]
+  notifications Notification[]
+
+  @@index([phone])
+}
+
+/// A customer request; becomes the order once approved. One record from
+/// request to doorstep.
+model Order {
+  id                   String         @id @default(cuid())
+  number               Int            @unique @default(autoincrement())
+  customerId           String
+  customer             Customer       @relation(fields: [customerId], references: [id])
+  createdById          String
+  createdBy            User           @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  type                 OrderType      @default(SINGLE)
+  /// True when CS overrode the auto-suggested type.
+  typeOverridden       Boolean        @default(false)
+  shippingMethod       ShippingMethod @default(AIR)
+  targetBudgetBdt      Decimal?       @db.Decimal(14, 2)
+  customerNotes        String?
+  specialInstructions  String?
+  requestStatus        RequestStatus  @default(NEW)
+  status               OrderStatus    @default(REQUESTED)
+  /// Higher = more urgent in the China queue.
+  priority             Int            @default(0)
+  /// China team asked BD to collect an upfront (advance) payment.
+  advanceRequestedAt   DateTime?
+  advanceRequestedById String?
+  advanceRequestedBy   User?          @relation("AdvanceRequestedBy", fields: [advanceRequestedById], references: [id])
+  advanceRequestNote   String?
+  requestedAt          DateTime       @default(now())
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  lines         OrderLine[]
+  comments      Comment[]
+  attachments   Attachment[]
+  payments      Payment[]
+  estimates     Estimate[]
+  samples       Sample[]
+  issues        Issue[]
+  invoices      Invoice[]
+  deliveries    Delivery[]
+  claims        Claim[]
+  notifications Notification[]
+
+  @@index([status])
+  @@index([requestStatus])
+  @@index([customerId])
+}
+
+model OrderLine {
+  id                 String      @id @default(cuid())
+  orderId            String
+  order              Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lineNo             Int
+  productName        String
+  color              String?
+  size               String?
+  model              String?
+  quantity           Int
+  notes              String?
+  status             OrderStatus @default(REQUESTED)
+  /// RMB unit price quoted to the customer (basis for price-change alert).
+  quotedUnitPriceRmb Decimal?    @db.Decimal(14, 2)
+  /// Customer selling price in BDT for the whole line. Hidden from PURCHASE.
+  sellingPriceBdt    Decimal?    @db.Decimal(14, 2)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  links          ProductLink[]
+  attachments    Attachment[]
+  estimateLines  EstimateLine[]
+  sampleLines    SampleLine[]
+  purchaseLines  PurchaseLine[]
+  receivingLines ReceivingLine[]
+  trackingEvents TrackingEvent[]
+  issues         Issue[]
+  claims         Claim[]
+
+  @@unique([orderId, lineNo])
+  @@index([status])
+}
+
+model ProductLink {
+  id            String    @id @default(cuid())
+  orderLineId   String
+  orderLine     OrderLine @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  url           String
+  /// Lower-cased URL without tracking params; used for duplicate-link check.
+  normalizedUrl String
+  platform      Platform
+  createdAt     DateTime  @default(now())
+
+  @@index([normalizedUrl])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attachments Attachment[]
+
+  @@index([orderId])
+}
+
+/// Uploaded file (product image, package photo, supplier invoice, proof of
+/// delivery…). Linked to whichever record owns it.
+model Attachment {
+  id           String         @id @default(cuid())
+  kind         AttachmentKind
+  /// Storage key / path (not a public URL).
+  storageKey   String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  uploadedById String
+  uploadedBy   User           @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime       @default(now())
+
+  orderId         String?
+  order           Order?         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderLineId     String?
+  orderLine       OrderLine?     @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  commentId       String?
+  comment         Comment?       @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  supplierOrderId String?
+  supplierOrder   SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: Cascade)
+  receivingId     String?
+  receiving       Receiving?     @relation(fields: [receivingId], references: [id], onDelete: Cascade)
+  issueId         String?
+  issue           Issue?         @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  deliveryId      String?
+  delivery        Delivery?      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  claimId         String?
+  claim           Claim?         @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  sampleId        String?
+  sample          Sample?        @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+}
+
+/// Customer money in BDT: advance before purchase, balance on delivery, refunds.
+model Payment {
+  id           String        @id @default(cuid())
+  number       Int           @unique @default(autoincrement())
+  /// Null only for payments of stand-alone samples (sampleId set).
+  orderId      String?
+  order        Order?        @relation(fields: [orderId], references: [id])
+  invoiceId    String?
+  invoice      Invoice?      @relation(fields: [invoiceId], references: [id])
+  sampleId     String?
+  sample       Sample?       @relation(fields: [sampleId], references: [id])
+  type         PaymentType
+  amountBdt    Decimal       @db.Decimal(14, 2)
+  method       PaymentMethod
+  reference    String?
+  note         String?
+  receivedById String
+  receivedBy   User          @relation(fields: [receivedById], references: [id])
+  paidAt       DateTime
+  createdAt    DateTime      @default(now())
+
+  @@index([orderId])
+}
+
+// ───────────────────────── Module 3: China quotation (estimates) ─────────────────────────
+
+/// China team's quotation for a request (single or bulk). China fills the RMB
+/// side, BD adds selling prices. Revisions keep history (v1, v2…).
+model Estimate {
+  id                String         @id @default(cuid())
+  number            Int            @unique @default(autoincrement())
+  orderId           String
+  order             Order          @relation(fields: [orderId], references: [id])
+  version           Int            @default(1)
+  previousVersionId String?        @unique
+  previousVersion   Estimate?      @relation("EstimateRevision", fields: [previousVersionId], references: [id])
+  nextVersion       Estimate?      @relation("EstimateRevision")
+  status            EstimateStatus @default(DRAFT)
+
+  // China costs (RMB)
+  domesticShippingRmb Decimal @default(0) @db.Decimal(14, 2)
+  packingRmb          Decimal @default(0) @db.Decimal(14, 2)
+  inspectionRmb       Decimal @default(0) @db.Decimal(14, 2)
+  serviceFeeRmb       Decimal @default(0) @db.Decimal(14, 2)
+
+  // Size – sums of the lines
+  grossWeightKg Decimal @default(0) @db.Decimal(10, 3)
+  cartonCount   Int     @default(0)
+  cbm           Decimal @default(0) @db.Decimal(10, 4)
+
+  // International shipping estimate, entered by China in RMB:
+  // air = gross weight × rate per kg, sea = CBM × rate per CBM.
+  shippingMethod        ShippingMethod
+  shippingRatePerKgRmb  Decimal?       @db.Decimal(14, 2)
+  shippingRatePerCbmRmb Decimal?       @db.Decimal(14, 2)
+  shippingRmb           Decimal        @default(0) @db.Decimal(14, 2)
+
+  // Rate locked on the estimate
+  exchangeRateId String
+  exchangeRate   ExchangeRate @relation(fields: [exchangeRateId], references: [id])
+  rateUsed       Decimal      @db.Decimal(12, 4)
+
+  // Totals
+  /// Sum of line product totals.
+  rmbSubtotal    Decimal  @db.Decimal(14, 2)
+  /// Products + China costs + shipping.
+  totalRmb       Decimal  @db.Decimal(14, 2)
+  productCostBdt Decimal  @db.Decimal(14, 2)
+  shippingBdt    Decimal  @db.Decimal(14, 2)
+  /// totalRmb × rateUsed.
+  totalBdt       Decimal  @db.Decimal(14, 2)
+  /// Set by BD (sum of line selling prices − totalBdt). Hidden from PURCHASE.
+  marginBdt      Decimal? @db.Decimal(14, 2)
+  /// Set by BD (sum of line selling prices). Hidden from PURCHASE.
+  grandTotalBdt  Decimal? @db.Decimal(14, 2)
+
+  validUntil   DateTime
+  notes        String?
+  createdById  String
+  createdBy    User      @relation("EstimateCreatedBy", fields: [createdById], references: [id])
+  reviewedById String?
+  reviewedBy   User?     @relation("EstimateReviewedBy", fields: [reviewedById], references: [id])
+  submittedAt  DateTime?
+  reviewedAt   DateTime?
+  sentAt       DateTime?
+  decidedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  lines EstimateLine[]
+
+  @@unique([orderId, version])
+}
+
+model EstimateLine {
+  id           String     @id @default(cuid())
+  estimateId   String
+  estimate     Estimate   @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  orderLineId  String?
+  orderLine    OrderLine? @relation(fields: [orderLineId], references: [id])
+  productName  String
+  moq          Int?
+  quantity     Int
+  unitPriceRmb Decimal    @db.Decimal(14, 2)
+  lineTotalRmb Decimal    @db.Decimal(14, 2)
+
+  // Size, entered by China
+  unitWeightKg Decimal? @db.Decimal(10, 3)
+  /// unitWeightKg × quantity
+  weightKg     Decimal  @default(0) @db.Decimal(10, 3)
+  cartonCount  Int      @default(0)
+  lengthCm     Decimal? @db.Decimal(8, 2)
+  widthCm      Decimal? @db.Decimal(8, 2)
+  heightCm     Decimal? @db.Decimal(8, 2)
+  /// (L × W × H / 1,000,000) × cartons
+  cbm          Decimal  @default(0) @db.Decimal(10, 4)
+
+  /// Customer selling price for the line, set by BD (or a China user allowed
+  /// to via User.canSetSellingPrice). Hidden from other PURCHASE users.
+  sellingPriceBdt Decimal? @db.Decimal(14, 2)
+}
+
+// ───────────────────────── Samples ─────────────────────────
+
+/// A sample, tracked separately from orders: invoice → (payment) →
+/// purchase → shipping → delivery. Either requested from a quoted request
+/// (orderId set) or created on its own for a customer (no request).
+model Sample {
+  id            String       @id @default(cuid())
+  number        Int          @unique @default(autoincrement())
+  /// Null for a stand-alone sample.
+  orderId       String?
+  order         Order?       @relation(fields: [orderId], references: [id])
+  customerId    String
+  customer      Customer     @relation(fields: [customerId], references: [id])
+  status        SampleStatus @default(REQUESTED)
+  requestedById String
+  requestedBy   User         @relation("SampleRequestedBy", fields: [requestedById], references: [id])
+  requestNote   String?
+  requestedAt   DateTime     @default(now())
+
+  // Sample invoice for the customer, prepared by China
+  productRmb            Decimal?      @db.Decimal(14, 2)
+  chinaShippingRmb      Decimal?      @db.Decimal(14, 2)
+  shippingToBdRmb       Decimal?      @db.Decimal(14, 2)
+  /// Rate used to calculate shippingToBdRmb (one of the two), kept for editing.
+  shippingRatePerKgRmb  Decimal?      @db.Decimal(14, 2)
+  shippingRatePerCbmRmb Decimal?      @db.Decimal(14, 2)
+  serviceRmb            Decimal?      @db.Decimal(14, 2)
+  totalRmb              Decimal?      @db.Decimal(14, 2)
+  exchangeRateId        String?
+  exchangeRate          ExchangeRate? @relation(fields: [exchangeRateId], references: [id])
+  rateUsed              Decimal?      @db.Decimal(12, 4)
+  totalBdt              Decimal?      @db.Decimal(14, 2)
+  /// China decides on invoicing whether to wait for payment before buying.
+  paymentRequired       Boolean?
+  invoicedById          String?
+  invoicedBy            User?         @relation("SampleInvoicedBy", fields: [invoicedById], references: [id])
+  invoicedAt            DateTime?
+
+  // Purchase in China
+  supplierName          String?
+  supplierOrderNo       String?
+  purchaseTrackingUrl   String?
+  expectedAtWarehouseAt DateTime?
+  purchasedById         String?
+  purchasedBy           User?     @relation("SamplePurchasedBy", fields: [purchasedById], references: [id])
+  purchasedAt           DateTime?
+
+  // Size of the sample parcel (entered by China)
+  weightKg    Decimal? @db.Decimal(10, 3)
+  cartonCount Int?
+  lengthCm    Decimal? @db.Decimal(8, 2)
+  widthCm     Decimal? @db.Decimal(8, 2)
+  heightCm    Decimal? @db.Decimal(8, 2)
+  /// (L × W × H / 1,000,000) × cartons
+  cbm         Decimal? @db.Decimal(10, 4)
+
+  // China → Bangladesh
+  shippingMode SampleShippingMode?
+  carrierName  String?
+  trackingNo   String?
+  trackingUrl  String?
+  shipmentId   String?
+  shipment     Shipment?           @relation(fields: [shipmentId], references: [id])
+  shippedAt    DateTime?
+  etaBd        DateTime?
+
+  // Bangladesh → customer
+  receivedBdAt     DateTime?
+  deliveredAt      DateTime?
+  customerFeedback String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines       SampleLine[]
+  events      SampleEvent[]
+  payments    Payment[]
+  attachments Attachment[]
+
+  @@index([status])
+  @@index([orderId])
+}
+
+model SampleLine {
+  id          String     @id @default(cuid())
+  sampleId    String
+  sample      Sample     @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  /// Set when the sample comes from a request line.
+  orderLineId String?
+  orderLine   OrderLine? @relation(fields: [orderLineId], references: [id])
+  productName String
+  variant     String?
+  /// Product link (1688, Taobao…) for stand-alone samples.
+  link        String?
+  quantity    Int
+}
+
+/// The sample's own tracking timeline.
+model SampleEvent {
+  id          String        @id @default(cuid())
+  sampleId    String
+  sample      Sample        @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  status      SampleStatus?
+  message     String
+  occurredAt  DateTime      @default(now())
+  createdById String?
+  createdBy   User?         @relation(fields: [createdById], references: [id])
+
+  @@index([sampleId, occurredAt])
+}
+
+// ───────────────────────── Module 2: China purchasing ─────────────────────────
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  platform  Platform
+  shopUrl   String?
+  contact   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders SupplierOrder[]
+
+  @@unique([name, platform])
+}
+
+/// One order placed with a supplier. May cover lines from several customer
+/// orders; costs are split per PurchaseLine.
+model SupplierOrder {
+  id              String         @id @default(cuid())
+  number          Int            @unique @default(autoincrement())
+  supplierId      String
+  supplier        Supplier       @relation(fields: [supplierId], references: [id])
+  platform        Platform
+  supplierOrderNo String?
+  status          PurchaseStatus @default(PENDING)
+  purchasedById   String
+  purchasedBy     User           @relation(fields: [purchasedById], references: [id])
+  purchaseDate    DateTime
+  /// e.g. Alipay, WeChat Pay, bank card.
+  paymentMethod   String?
+
+  productTotalRmb     Decimal      @db.Decimal(14, 2)
+  domesticShippingRmb Decimal      @default(0) @db.Decimal(14, 2)
+  serviceChargeRmb    Decimal      @default(0) @db.Decimal(14, 2)
+  totalRmb            Decimal      @db.Decimal(14, 2)
+  exchangeRateId      String
+  exchangeRate        ExchangeRate @relation(fields: [exchangeRateId], references: [id])
+  rateUsed            Decimal      @db.Decimal(12, 4)
+  totalBdt            Decimal      @db.Decimal(14, 2)
+
+  // Leg 1 tracking: supplier → China warehouse
+  /// Supplier order / logistics page; required when the purchase is completed.
+  trackingUrl       String?
+  courierName       String?
+  trackingNo        String?
+  shippedAt         DateTime?
+  expectedArrivalAt DateTime?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines       PurchaseLine[]
+  attachments Attachment[]
+  receivings  Receiving[]
+
+  @@index([trackingNo])
+  @@index([status])
+}
+
+model PurchaseLine {
+  id                       String        @id @default(cuid())
+  supplierOrderId          String
+  supplierOrder            SupplierOrder @relation(fields: [supplierOrderId], references: [id], onDelete: Cascade)
+  orderLineId              String
+  orderLine                OrderLine     @relation(fields: [orderLineId], references: [id])
+  quantity                 Int
+  unitPriceRmb             Decimal       @db.Decimal(14, 2)
+  productTotalRmb          Decimal       @db.Decimal(14, 2)
+  domesticShippingShareRmb Decimal       @default(0) @db.Decimal(14, 2)
+  serviceChargeShareRmb    Decimal       @default(0) @db.Decimal(14, 2)
+  totalRmb                 Decimal       @db.Decimal(14, 2)
+  rateUsed                 Decimal       @db.Decimal(12, 4)
+  totalBdt                 Decimal       @db.Decimal(14, 2)
+
+  // Price-change alert vs. quoted RMB price
+  quotedUnitPriceRmb Decimal?            @db.Decimal(14, 2)
+  priceChangePct     Decimal?            @db.Decimal(7, 2)
+  priceApproval      PriceApprovalStatus @default(NOT_REQUIRED)
+  priceApprovedById  String?
+  priceApprovedBy    User?               @relation("PriceApprovedBy", fields: [priceApprovedById], references: [id])
+  priceApprovedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  receivingLines ReceivingLine[]
+
+  @@index([orderLineId])
+}
+
+// ───────────────────────── Module 5: China warehouse receiving ─────────────────────────
+
+/// One parcel received at the China warehouse (or a repacked carton set).
+model Receiving {
+  id              String             @id @default(cuid())
+  number          Int                @unique @default(autoincrement())
+  receivedAt      DateTime
+  receivedById    String
+  receivedBy      User               @relation(fields: [receivedById], references: [id])
+  /// Supplier tracking number used to match the purchase.
+  trackingNo      String?
+  supplierOrderId String?
+  supplierOrder   SupplierOrder?     @relation(fields: [supplierOrderId], references: [id])
+  condition       ReceivingCondition @default(OK)
+  status          ReceivingStatus    @default(READY_TO_SHIP)
+  cartonCount     Int                @default(1)
+  cartonMark      String?
+  netWeightKg     Decimal?           @db.Decimal(10, 3)
+  grossWeightKg   Decimal            @db.Decimal(10, 3)
+  /// Sum of Carton.cbm.
+  cbm             Decimal            @db.Decimal(10, 4)
+  shippingMethod  ShippingMethod
+  shipmentId      String?
+  shipment        Shipment?          @relation(fields: [shipmentId], references: [id])
+  /// This parcel's share of shipment freight (by gross weight or CBM).
+  freightShareBdt Decimal?           @db.Decimal(14, 2)
+  /// Set when this parcel was merged into another during repacking.
+  repackedIntoId  String?
+  repackedInto    Receiving?         @relation("Repack", fields: [repackedIntoId], references: [id])
+  repackedFrom    Receiving[]        @relation("Repack")
+  notes           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  lines       ReceivingLine[]
+  cartons     Carton[]
+  attachments Attachment[]
+  issues      Issue[]
+  bdReceiving BdReceivingItem?
+
+  @@index([trackingNo])
+  @@index([shipmentId])
+  @@index([status])
+}
+
+/// Quantity of one order line inside a parcel (supports partial receiving).
+model ReceivingLine {
+  id               String             @id @default(cuid())
+  receivingId      String
+  receiving        Receiving          @relation(fields: [receivingId], references: [id], onDelete: Cascade)
+  orderLineId      String
+  orderLine        OrderLine          @relation(fields: [orderLineId], references: [id])
+  purchaseLineId   String?
+  purchaseLine     PurchaseLine?      @relation(fields: [purchaseLineId], references: [id])
+  quantityOrdered  Int
+  quantityReceived Int
+  condition        ReceivingCondition @default(OK)
+  /// This line's share of the parcel's freight.
+  freightShareBdt  Decimal?           @db.Decimal(14, 2)
+
+  @@index([orderLineId])
+}
+
+model Carton {
+  id            String    @id @default(cuid())
+  receivingId   String
+  receiving     Receiving @relation(fields: [receivingId], references: [id], onDelete: Cascade)
+  label         String?
+  lengthCm      Decimal   @db.Decimal(8, 2)
+  widthCm       Decimal   @db.Decimal(8, 2)
+  heightCm      Decimal   @db.Decimal(8, 2)
+  /// (L × W × H) / 1,000,000
+  cbm           Decimal   @db.Decimal(10, 4)
+  grossWeightKg Decimal?  @db.Decimal(10, 3)
+}
+
+/// Damaged / wrong / short / missing items, weight mismatches – raised in
+/// China or Bangladesh, routed to purchaser and BD team.
+model Issue {
+  id           String      @id @default(cuid())
+  number       Int         @unique @default(autoincrement())
+  type         IssueType
+  source       IssueSource
+  status       IssueStatus @default(OPEN)
+  orderId      String?
+  order        Order?      @relation(fields: [orderId], references: [id])
+  orderLineId  String?
+  orderLine    OrderLine?  @relation(fields: [orderLineId], references: [id])
+  receivingId  String?
+  receiving    Receiving?  @relation(fields: [receivingId], references: [id])
+  description  String
+  resolution   String?
+  reportedById String
+  reportedBy   User        @relation("IssueReportedBy", fields: [reportedById], references: [id])
+  assignedToId String?
+  assignedTo   User?       @relation("IssueAssignedTo", fields: [assignedToId], references: [id])
+  resolvedAt   DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  attachments Attachment[]
+  claims      Claim[]
+
+  @@index([status])
+}
+
+// ───────────────────────── Module 6: Weekly shipments ─────────────────────────
+
+model Shipment {
+  id                   String         @id @default(cuid())
+  /// e.g. SHP-2026-W40-A (air) / SHP-2026-W40-S (sea)
+  code                 String         @unique
+  year                 Int
+  weekNumber           Int
+  method               ShippingMethod
+  status               ShipmentStatus @default(UPCOMING)
+  cutoffDate           DateTime
+  plannedDepartureDate DateTime?
+  etaBd                DateTime?
+  departedAt           DateTime?
+  arrivedAt            DateTime?
+  customsClearedAt     DateTime?
+  completedAt          DateTime?
+  forwarder            String?
+  /// AWB / B/L / container number.
+  masterTrackingNo     String?
+
+  // Cached roll-ups, recalculated when items are attached/removed.
+  itemCount     Int     @default(0)
+  cartonCount   Int     @default(0)
+  netWeightKg   Decimal @default(0) @db.Decimal(10, 3)
+  grossWeightKg Decimal @default(0) @db.Decimal(10, 3)
+  cbm           Decimal @default(0) @db.Decimal(10, 4)
+
+  // Freight for the whole shipment
+  chargeableWeightKg Decimal?  @db.Decimal(10, 3)
+  freightCost        Decimal?  @db.Decimal(14, 2)
+  freightCurrency    Currency?
+  /// Rate used when freightCurrency is RMB.
+  freightRateUsed    Decimal?  @db.Decimal(12, 4)
+  freightCostBdt     Decimal?  @db.Decimal(14, 2)
+
+  // Optional capacity
+  maxWeightKg Decimal? @db.Decimal(10, 3)
+  maxCbm      Decimal? @db.Decimal(10, 4)
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  receivings     Receiving[]
+  samples        Sample[]
+  bdReceivings   BdReceivingItem[]
+  trackingEvents TrackingEvent[]
+
+  @@unique([year, weekNumber, method])
+  @@index([status])
+}
+
+// ───────────────────────── Module 7: Tracking ─────────────────────────
+
+/// One row per status change / tracking update; builds the timeline.
+model TrackingEvent {
+  id          String       @id @default(cuid())
+  orderLineId String
+  orderLine   OrderLine    @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  leg         TrackingLeg
+  status      OrderStatus?
+  message     String
+  courier     String?
+  trackingNo  String?
+  shipmentId  String?
+  shipment    Shipment?    @relation(fields: [shipmentId], references: [id])
+  occurredAt  DateTime     @default(now())
+  createdById String?
+  createdBy   User?        @relation(fields: [createdById], references: [id])
+  createdAt   DateTime     @default(now())
+
+  @@index([orderLineId, occurredAt])
+}
+
+// ───────────────────────── Module 8: BD receiving & delivery ─────────────────────────
+
+/// Check of one China parcel when the shipment arrives in Bangladesh.
+model BdReceivingItem {
+  id             String            @id @default(cuid())
+  shipmentId     String
+  shipment       Shipment          @relation(fields: [shipmentId], references: [id])
+  receivingId    String            @unique
+  receiving      Receiving         @relation(fields: [receivingId], references: [id])
+  status         BdReceivingStatus @default(PENDING)
+  bdWeightKg     Decimal?          @db.Decimal(10, 3)
+  /// True when BD weight differs from China weight beyond tolerance.
+  weightMismatch Boolean           @default(false)
+  checkedById    String?
+  checkedBy      User?             @relation(fields: [checkedById], references: [id])
+  checkedAt      DateTime?
+  notes          String?
+
+  @@index([shipmentId])
+}
+
+/// Final customer invoice in BDT.
+model Invoice {
+  id               String        @id @default(cuid())
+  number           Int           @unique @default(autoincrement())
+  orderId          String
+  order            Order         @relation(fields: [orderId], references: [id])
+  status           InvoiceStatus @default(DRAFT)
+  exchangeRateId   String
+  exchangeRate     ExchangeRate  @relation(fields: [exchangeRateId], references: [id])
+  rateUsed         Decimal       @db.Decimal(12, 4)
+  productCostRmb   Decimal       @db.Decimal(14, 2)
+  productCostBdt   Decimal       @db.Decimal(14, 2)
+  chinaChargesRmb  Decimal       @default(0) @db.Decimal(14, 2)
+  chinaChargesBdt  Decimal       @default(0) @db.Decimal(14, 2)
+  shippingShareBdt Decimal       @default(0) @db.Decimal(14, 2)
+  localDeliveryBdt Decimal       @default(0) @db.Decimal(14, 2)
+  discountBdt      Decimal       @default(0) @db.Decimal(14, 2)
+  totalBdt         Decimal       @db.Decimal(14, 2)
+  advancePaidBdt   Decimal       @default(0) @db.Decimal(14, 2)
+  balanceDueBdt    Decimal       @db.Decimal(14, 2)
+  issuedAt         DateTime?
+  issuedById       String?
+  issuedBy         User?         @relation(fields: [issuedById], references: [id])
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  payments Payment[]
+
+  @@index([orderId])
+}
+
+/// Leg 3: Bangladesh → customer.
+model Delivery {
+  id                String          @id @default(cuid())
+  number            Int             @unique @default(autoincrement())
+  orderId           String
+  order             Order           @relation(fields: [orderId], references: [id])
+  status            DeliveryStatus  @default(PENDING)
+  courier           DeliveryCourier
+  courierName       String?
+  trackingNo        String?
+  riderName         String?
+  riderPhone        String?
+  codAmountBdt      Decimal         @default(0) @db.Decimal(14, 2)
+  deliveryChargeBdt Decimal         @default(0) @db.Decimal(14, 2)
+  assignedById      String
+  assignedBy        User            @relation(fields: [assignedById], references: [id])
+  dispatchedAt      DateTime?
+  expectedAt        DateTime?
+  deliveredAt       DateTime?
+  receiverName      String?
+  notes             String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  /// Proof of delivery photos / signature.
+  attachments Attachment[]
+
+  @@index([orderId])
+  @@index([status])
+}
+
+/// Returns and claims after delivery.
+model Claim {
+  id          String        @id @default(cuid())
+  number      Int           @unique @default(autoincrement())
+  orderId     String
+  order       Order         @relation(fields: [orderId], references: [id])
+  orderLineId String?
+  orderLine   OrderLine?    @relation(fields: [orderLineId], references: [id])
+  issueId     String?
+  issue       Issue?        @relation(fields: [issueId], references: [id])
+  description String
+  decision    ClaimDecision @default(PENDING)
+  amountBdt   Decimal?      @db.Decimal(14, 2)
+  status      ClaimStatus   @default(OPEN)
+  createdById String
+  createdBy   User          @relation("ClaimCreatedBy", fields: [createdById], references: [id])
+  decidedById String?
+  decidedBy   User?         @relation("ClaimDecidedBy", fields: [decidedById], references: [id])
+  decidedAt   DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  attachments Attachment[]
+}
+
+// ───────────────────────── Cross-cutting ─────────────────────────
+
+/// In-app notifications for staff, and SMS / WhatsApp / email to customers.
+model Notification {
+  id         String              @id @default(cuid())
+  channel    NotificationChannel
+  /// e.g. RATE_MISSING, ESTIMATE_READY, ARRIVED_BD.
+  type       String
+  title      String
+  body       String
+  status     NotificationStatus  @default(PENDING)
+  userId     String?
+  user       User?               @relation(fields: [userId], references: [id])
+  customerId String?
+  customer   Customer?           @relation(fields: [customerId], references: [id])
+  orderId    String?
+  order      Order?              @relation(fields: [orderId], references: [id])
+  error      String?
+  sentAt     DateTime?
+  readAt     DateTime?
+  createdAt  DateTime            @default(now())
+
+  @@index([userId, status])
+}
+
+/// Who changed price, rate, weight, CBM or status, and when.
+model AuditLog {
+  id         String      @id @default(cuid())
+  entityType String
+  entityId   String
+  action     AuditAction
+  /// Null for CREATE/DELETE of a whole record.
+  field      String?
+  oldValue   Json?
+  newValue   Json?
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id])
+  createdAt  DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
