@@ -123,7 +123,7 @@ export default async function RequestsPage({ searchParams }: PageProps<"/request
                       </div>
                     ))}
               </td>
-              <td className={tdCls}>{o.createdBy.name}</td>
+              <td className={tdCls}>{o.createdBy?.name ?? <span className="text-blue-700">Customer portal</span>}</td>
             </tr>
           ))}
         </Table>

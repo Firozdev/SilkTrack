@@ -56,15 +56,29 @@ export type ShippingOrderInput = {
 /** CS / Admin enters a shipping-only request for a customer who buys in China themselves. */
 export async function createShippingOrder(actor: Actor, input: ShippingOrderInput) {
   assertCan(actor.role, "request:edit");
+  return insertShippingOrder(input, { actorId: actor.id, source: "STAFF" });
+}
+
+export type PortalShippingOrderInput = Omit<ShippingOrderInput, "customer">;
+
+/** The customer submits a shipping order in the portal. */
+export async function createPortalShippingOrder(customerId: string, input: PortalShippingOrderInput) {
+  const s = await insertShippingOrder({ ...input, customer: { id: customerId, name: "", phone: "", address: "" } }, { source: "PORTAL", customerId });
+  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_SHIPPING_ORDER", title: `Portal shipping order: ${shippingNo(s)}`, body: "Submitted by the customer in the portal." });
+  return s;
+}
+
+async function insertShippingOrder(input: ShippingOrderInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string }) {
+  const actorId = by.source === "STAFF" ? by.actorId : null;
   const items = input.items.filter((i) => i.productName.trim() && i.quantity > 0);
   if (!items.length) throw new UserError("Add at least one product with a quantity");
   const s = await prisma.$transaction(async (tx) => {
-    const customer = await findOrCreateCustomer(tx, input.customer, actor.id);
+    const customerId = by.source === "PORTAL" ? by.customerId : (await findOrCreateCustomer(tx, input.customer, by.actorId)).id;
     const s = await tx.shippingOrder.create({
       data: {
-        customerId: customer.id,
-        source: "STAFF",
-        createdById: actor.id,
+        customerId,
+        source: by.source,
+        createdById: actorId,
         shippingMethod: input.shippingMethod,
         qaRequested: input.qaRequested,
         declaredWeightKg: input.declaredWeightKg,
@@ -80,10 +94,10 @@ export async function createShippingOrder(actor: Actor, input: ShippingOrderInpu
             trackingNo: i.trackingNo?.trim() || null,
           })),
         },
-        events: { create: { status: "REQUESTED", message: `Shipping-only request (${input.shippingMethod.toLowerCase()}${input.qaRequested ? ", QA test requested" : ""})`, createdById: actor.id } },
+        events: { create: { status: "REQUESTED", message: `Shipping-only request${by.source === "PORTAL" ? " from the customer portal" : ""} (${input.shippingMethod.toLowerCase()}${input.qaRequested ? ", QA test requested" : ""})`, createdById: actorId } },
       },
     });
-    await logChanges(tx, { entityType: "ShippingOrder", entityId: s.id, userId: actor.id, action: "CREATE" });
+    await logChanges(tx, { entityType: "ShippingOrder", entityId: s.id, userId: actorId, action: "CREATE" });
     return s;
   });
   await notifyRoles(["PURCHASE"], {
@@ -97,13 +111,24 @@ export async function createShippingOrder(actor: Actor, input: ShippingOrderInpu
 /** Customer / supplier tracking numbers usually arrive later; editable until the goods are received. */
 export async function updateShippingTracking(actor: Actor, id: string, items: { itemId: string; courierName?: string; trackingNo?: string }[]) {
   if (!can(actor.role, "request:edit")) assertCan(actor.role, "receiving:edit");
+  await applyTracking(id, items, actor.id);
+}
+
+/** The customer adds / corrects supplier tracking in the portal (own orders only). */
+export async function updatePortalShippingTracking(customerId: string, id: string, items: { itemId: string; courierName?: string; trackingNo?: string }[]) {
+  const owner = await prisma.shippingOrder.findUnique({ where: { id }, select: { customerId: true } });
+  if (!owner || owner.customerId !== customerId) throw new UserError("Shipping order not found");
+  await applyTracking(id, items, null);
+}
+
+async function applyTracking(id: string, items: { itemId: string; courierName?: string; trackingNo?: string }[], actorId: string | null) {
   const s = await load(id);
   requireStatus(s, ["REQUESTED"], "Tracking can only be changed before the goods are received");
   const own = new Set((await prisma.shippingOrderItem.findMany({ where: { shippingOrderId: id }, select: { id: true } })).map((i) => i.id));
   if (items.some((i) => !own.has(i.itemId))) throw new UserError("Unknown item");
   await prisma.$transaction(async (tx) => {
     for (const i of items) await tx.shippingOrderItem.update({ where: { id: i.itemId }, data: { courierName: i.courierName ?? null, trackingNo: i.trackingNo?.trim() || null } });
-    await tx.shippingOrderEvent.create({ data: { shippingOrderId: id, message: "Supplier tracking updated", createdById: actor.id } });
+    await tx.shippingOrderEvent.create({ data: { shippingOrderId: id, message: actorId ? "Supplier tracking updated" : "Supplier tracking updated by the customer", createdById: actorId } });
   });
 }
 

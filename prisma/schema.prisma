@@ -220,6 +220,19 @@ enum RecordSource {
   PORTAL
 }
 
+/// Customer portal login lifecycle. Self sign-up starts PENDING until staff
+/// approve it and link it to a Customer (phones can't be verified without SMS).
+enum PortalAccountStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  DISABLED
+}
+
+enum PortalTokenPurpose {
+  PASSWORD_RESET
+}
+
 enum SampleShippingMode {
   WEEKLY_SHIPMENT
   EXPRESS_COURIER
@@ -336,6 +349,8 @@ model User {
   shippingQa         ShippingOrder[]      @relation("ShippingOrderQaBy")
   shippingInvoiced   ShippingOrder[]      @relation("ShippingOrderInvoicedBy")
   shippingEvents     ShippingOrderEvent[]
+  portalReviews      PortalAccount[]      @relation("PortalAccountReviewedBy")
+  portalTokens       PortalToken[]
   comments           Comment[]
   attachments        Attachment[]
   paymentsReceived   Payment[]
@@ -410,6 +425,7 @@ model Customer {
   orders         Order[]
   samples        Sample[]
   shippingOrders ShippingOrder[]
+  portalAccounts PortalAccount[]
   notifications  Notification[]
 
   @@index([phone])
@@ -422,8 +438,10 @@ model Order {
   number               Int            @unique @default(autoincrement())
   customerId           String
   customer             Customer       @relation(fields: [customerId], references: [id])
-  createdById          String
-  createdBy            User           @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  source               RecordSource   @default(STAFF)
+  /// Null when the customer submitted it through the portal.
+  createdById          String?
+  createdBy            User?          @relation("OrderCreatedBy", fields: [createdById], references: [id])
   type                 OrderType      @default(SINGLE)
   /// True when CS overrode the auto-suggested type.
   typeOverridden       Boolean        @default(false)
@@ -525,16 +543,19 @@ model Comment {
 /// Uploaded file (product image, package photo, supplier invoice, proof of
 /// delivery…). Linked to whichever record owns it.
 model Attachment {
-  id           String         @id @default(cuid())
-  kind         AttachmentKind
+  id                  String         @id @default(cuid())
+  kind                AttachmentKind
   /// Storage key / path (not a public URL).
-  storageKey   String
-  fileName     String
-  mimeType     String
-  sizeBytes    Int
-  uploadedById String
-  uploadedBy   User           @relation(fields: [uploadedById], references: [id])
-  createdAt    DateTime       @default(now())
+  storageKey          String
+  fileName            String
+  mimeType            String
+  sizeBytes           Int
+  /// Staff uploader; null when the customer uploaded it in the portal.
+  uploadedById        String?
+  uploadedBy          User?          @relation(fields: [uploadedById], references: [id])
+  uploadedByAccountId String?
+  uploadedByAccount   PortalAccount? @relation(fields: [uploadedByAccountId], references: [id])
+  createdAt           DateTime       @default(now())
 
   orderId         String?
   order           Order?         @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -636,18 +657,20 @@ model Estimate {
   /// Set by BD (sum of line selling prices). Hidden from PURCHASE.
   grandTotalBdt  Decimal? @db.Decimal(14, 2)
 
-  validUntil   DateTime
-  notes        String?
-  createdById  String
-  createdBy    User      @relation("EstimateCreatedBy", fields: [createdById], references: [id])
-  reviewedById String?
-  reviewedBy   User?     @relation("EstimateReviewedBy", fields: [reviewedById], references: [id])
-  submittedAt  DateTime?
-  reviewedAt   DateTime?
-  sentAt       DateTime?
-  decidedAt    DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  validUntil      DateTime
+  notes           String?
+  createdById     String
+  createdBy       User      @relation("EstimateCreatedBy", fields: [createdById], references: [id])
+  reviewedById    String?
+  reviewedBy      User?     @relation("EstimateReviewedBy", fields: [reviewedById], references: [id])
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  sentAt          DateTime?
+  decidedAt       DateTime?
+  /// The customer approved / declined it themselves in the portal.
+  decidedInPortal Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   lines EstimateLine[]
 
@@ -1309,6 +1332,73 @@ model Claim {
   updatedAt   DateTime      @updatedAt
 
   attachments Attachment[]
+}
+
+// ───────────────────────── Customer portal ─────────────────────────
+
+/// A customer's portal login (phone + password). Separate from staff Users:
+/// own table, own session cookie, and it can only ever reach its Customer.
+model PortalAccount {
+  id           String              @id @default(cuid())
+  /// Digits only, BD local format (01XXXXXXXXX). Login ID.
+  phone        String              @unique
+  name         String
+  email        String?
+  passwordHash String
+  status       PortalAccountStatus @default(PENDING)
+  /// Portal language, also used for messages to this customer.
+  locale       Locale              @default(EN)
+  /// Set by staff on approval (existing customer or one created from the sign-up).
+  customerId   String?
+  customer     Customer?           @relation(fields: [customerId], references: [id])
+  // Details given at sign-up, used to create the Customer on approval
+  address      String
+  district     String?
+  area         String?
+  // Brute-force protection
+  failedLogins Int                 @default(0)
+  lockedUntil  DateTime?
+  lastLoginAt  DateTime?
+  reviewedById String?
+  reviewedBy   User?               @relation("PortalAccountReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+  rejectReason String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  sessions    PortalSession[]
+  tokens      PortalToken[]
+  attachments Attachment[]
+
+  @@index([status])
+  @@index([customerId])
+}
+
+/// Server-side portal session. The cookie holds a random token; only its
+/// SHA-256 hash is stored, so a DB leak can't be replayed. Revocable.
+model PortalSession {
+  id        String        @id @default(cuid())
+  tokenHash String        @unique
+  accountId String
+  account   PortalAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime      @default(now())
+
+  @@index([accountId])
+}
+
+/// One-time link (hash stored), e.g. a password reset link staff send by WhatsApp.
+model PortalToken {
+  id          String             @id @default(cuid())
+  tokenHash   String             @unique
+  accountId   String
+  account     PortalAccount      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  purpose     PortalTokenPurpose
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String?
+  createdBy   User?              @relation(fields: [createdById], references: [id])
+  createdAt   DateTime           @default(now())
 }
 
 // ───────────────────────── Cross-cutting ─────────────────────────

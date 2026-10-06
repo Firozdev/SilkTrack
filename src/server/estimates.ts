@@ -10,7 +10,7 @@ import { docNo } from "@/lib/format";
 import { logChanges, diffFields } from "@/lib/audit";
 import { notifyRoles, queueCustomerMessage } from "@/lib/notify";
 import { rateForConversion } from "./rates";
-import { markCustomerApproved, markRejected } from "./requests";
+import { applyCustomerApproval, applyCustomerRejection, markCustomerApproved, markRejected } from "./requests";
 import { setLineStatus } from "./status";
 import type { Actor } from "./actor";
 
@@ -147,7 +147,7 @@ export async function saveQuotation(actor: Actor, orderId: string, input: Quotat
   });
 }
 
-async function setStatus(tx: Tx, id: string, from: EstimateStatus, to: EstimateStatus, actorId: string, extra: Prisma.EstimateUpdateInput = {}) {
+async function setStatus(tx: Tx, id: string, from: EstimateStatus, to: EstimateStatus, actorId: string | null, extra: Prisma.EstimateUpdateInput = {}) {
   await tx.estimate.update({ where: { id }, data: { status: to, ...extra } });
   await logChanges(tx, { entityType: "Estimate", entityId: id, userId: actorId, action: "UPDATE", changes: [{ field: "status", oldValue: from, newValue: to }] });
 }
@@ -232,6 +232,31 @@ export async function rejectQuotation(actor: Actor, id: string) {
   if (e.status !== "SENT_TO_CUSTOMER") throw new UserError("Only quotations sent to the customer can be rejected");
   await prisma.$transaction((tx) => setStatus(tx, id, e.status, "REJECTED", actor.id, { decidedAt: new Date() }));
   await markRejected(actor, e.orderId);
+}
+
+/**
+ * The customer approves or declines the quotation sent to them, in the
+ * portal. Same effect as CS recording it; only their own requests.
+ */
+export async function decidePortalQuotation(customerId: string, id: string, decision: "APPROVE" | "DECLINE", reason?: string) {
+  const e = await prisma.estimate.findUnique({ where: { id }, include: { order: { select: { id: true, number: true, customerId: true } } } });
+  if (!e || e.order.customerId !== customerId) throw new UserError("Quotation not found");
+  if (e.status !== "SENT_TO_CUSTOMER") throw new UserError("This quotation was already answered");
+  const ref = `${docNo("estimate", e.number)} v${e.version}`;
+  if (decision === "APPROVE") {
+    if (e.validUntil < today(BD_TZ)) throw new UserError("This quotation has expired. We will send you an updated price.");
+    await prisma.$transaction((tx) => setStatus(tx, id, e.status, "APPROVED", null, { decidedAt: new Date(), decidedInPortal: true }));
+    await applyCustomerApproval(e.orderId, null, `Customer approved quotation ${ref} in the portal`);
+  } else {
+    await prisma.$transaction((tx) => setStatus(tx, id, e.status, "REJECTED", null, { decidedAt: new Date(), decidedInPortal: true, notes: reason ? `${e.notes ? `${e.notes}\n` : ""}Declined by customer: ${reason}` : e.notes }));
+    await applyCustomerRejection(e.orderId, null, `Customer declined quotation ${ref} in the portal${reason ? `: ${reason}` : ""}`);
+  }
+  await notifyRoles(["CS", "ADMIN"], {
+    type: decision === "APPROVE" ? "PORTAL_QUOTE_APPROVED" : "PORTAL_QUOTE_DECLINED",
+    title: `${decision === "APPROVE" ? "Quote approved" : "Quote declined"} by customer: ${docNo("order", e.order.number)}`,
+    body: decision === "APPROVE" ? `${ref} – collect the advance payment.` : `${ref}${reason ? ` – ${reason}` : ""}`,
+    orderId: e.orderId,
+  });
 }
 
 /**

@@ -52,7 +52,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
               </A>
             ))}{" "}
             {order.type === "BULK" ? "Bulk" : "Single"} · {humanize(order.shippingMethod)} · created by{" "}
-            {order.createdBy.name}, {fmtDateTime(order.requestedAt, user.timezone)}
+            {order.createdBy?.name ?? "the customer (portal)"}, {fmtDateTime(order.requestedAt, user.timezone)}
           </span>
         }
       />

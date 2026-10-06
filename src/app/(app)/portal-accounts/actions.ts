@@ -1,0 +1,63 @@
+"use server";
+
+import { headers } from "next/headers";
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { formAction } from "@/lib/action";
+import { fields } from "@/lib/forms";
+import { whatsappLink } from "@/lib/notify";
+import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/session";
+import { approveAccount, createResetToken, rejectAccount, setAccountDisabled } from "@/server/portal-auth";
+
+const idOf = (fd: FormData) => z.object({ id: z.string().min(1) }).parse(fields(fd)).id;
+
+/** Public origin of this request (behind Caddy / a tunnel the proxy sets the host). */
+async function origin() {
+  if (process.env.AUTH_URL) return new URL(process.env.AUTH_URL).origin;
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
+export const approveAction = formAction(async (fd) => {
+  const user = await requireUser();
+  const { customerId } = z.object({ customerId: z.string().min(1, "Choose a customer or “Create new customer”") }).parse(fields(fd));
+  await approveAccount(user, idOf(fd), customerId);
+  revalidatePath("/portal-accounts");
+  return { ok: true, message: "Approved – the customer can log in now." };
+});
+
+export const rejectAction = formAction(async (fd) => {
+  const user = await requireUser();
+  const reason = z.string().trim().min(1, "Give a reason").parse(fd.get("reason"));
+  await rejectAccount(user, idOf(fd), reason);
+  revalidatePath("/portal-accounts");
+  return { ok: true, message: "Rejected." };
+});
+
+export const disableAction = formAction(async (fd) => {
+  const user = await requireUser();
+  const { disabled } = z.object({ disabled: z.enum(["yes", "no"]) }).parse(fields(fd));
+  await setAccountDisabled(user, idOf(fd), disabled === "yes");
+  revalidatePath("/portal-accounts");
+  return { ok: true, message: disabled === "yes" ? "Disabled and logged out." : "Enabled." };
+});
+
+export const resetLinkAction = formAction(async (fd) => {
+  const user = await requireUser();
+  const id = idOf(fd);
+  const token = await createResetToken(user, id);
+  const acc = await prisma.portalAccount.findUniqueOrThrow({ where: { id }, select: { phone: true, name: true } });
+  const url = `${await origin()}/portal/reset?token=${token}`;
+  const text = `Dear ${acc.name}, set a new password for your SilkTrack account here (valid 24 hours, one use): ${url}`;
+  return {
+    ok: true,
+    message: "Reset link created. Send it to the customer only – anyone with it can set the password.",
+    links: [
+      { href: whatsappLink(acc.phone, text), label: "💬 Send by WhatsApp" },
+      { href: url, label: url },
+    ],
+  };
+});

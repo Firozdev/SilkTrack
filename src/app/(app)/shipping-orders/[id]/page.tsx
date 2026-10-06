@@ -54,7 +54,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
       cartons: true,
       events: { orderBy: { occurredAt: "asc" }, include: { createdBy: { select: { name: true } } } },
       payments: { orderBy: { paidAt: "asc" } },
-      attachments: { select: { id: true, fileName: true, mimeType: true, kind: true } },
+      attachments: { select: { id: true, fileName: true, mimeType: true, kind: true, uploadedByAccountId: true } },
     },
   });
   if (!raw) notFound();

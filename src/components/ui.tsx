@@ -63,8 +63,8 @@ export function Dl({ items }: { items: [string, ReactNode][] }) {
   );
 }
 
-const GREEN = new Set(["DELIVERED", "COMPLETED", "APPROVED", "CUSTOMER_APPROVED", "PAID", "RECEIVED", "OK", "RESOLVED", "CLOSED", "READY_TO_SHIP", "RECEIVED_AT_CHINA_WAREHOUSE", "SENT", "READ", "CUSTOMS_CLEARED", "NOT_REQUIRED", "READY_FOR_DELIVERY", "PASSED"]);
-const RED = new Set(["CANCELLED", "REJECTED", "DAMAGED", "MISSING", "WRONG_ITEM", "SHORT", "OUT_OF_STOCK", "FAILED", "OPEN_ISSUE", "PRICE_CHANGED", "REFUND_FROM_SUPPLIER", "RETURNED", "WEIGHT_MISMATCH"]);
+const GREEN = new Set(["DELIVERED", "COMPLETED", "APPROVED", "CUSTOMER_APPROVED", "PAID", "RECEIVED", "OK", "RESOLVED", "CLOSED", "READY_TO_SHIP", "RECEIVED_AT_CHINA_WAREHOUSE", "SENT", "READ", "CUSTOMS_CLEARED", "NOT_REQUIRED", "READY_FOR_DELIVERY", "PASSED", "ACTIVE"]);
+const RED = new Set(["CANCELLED", "REJECTED", "DAMAGED", "MISSING", "WRONG_ITEM", "SHORT", "OUT_OF_STOCK", "FAILED", "OPEN_ISSUE", "PRICE_CHANGED", "REFUND_FROM_SUPPLIER", "RETURNED", "WEIGHT_MISMATCH", "DISABLED"]);
 const AMBER = new Set(["ON_HOLD", "PENDING", "NEW", "DRAFT", "UPCOMING", "QUOTED", "REQUESTED", "REVISED", "PARTIALLY_PAID", "ISSUED", "IN_PROGRESS"]);
 
 export function Badge({ value, label }: { value: string; label?: string }) {
@@ -126,22 +126,37 @@ export function Alert({ tone = "info", children }: { tone?: "info" | "warn" | "e
 }
 
 /** Thumbnails/links for attachments. */
-export function Attachments({ items }: { items: { id: string; fileName: string; mimeType: string }[] }) {
+/**
+ * Thumbnails / file links. `base` is the serving route (staff: /files, portal:
+ * /portal/files). Files the customer uploaded in the portal get a small tag.
+ */
+export function Attachments({
+  items,
+  base = "/files",
+  customerTag = "from customer",
+}: {
+  items: { id: string; fileName: string; mimeType: string; uploadedByAccountId?: string | null }[];
+  base?: string;
+  customerTag?: string | null;
+}) {
   if (!items.length) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-2">
-      {items.map((a) =>
-        a.mimeType.startsWith("image/") ? (
-          <a key={a.id} href={`/files/${a.id}`} target="_blank" rel="noreferrer" title={a.fileName}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/files/${a.id}`} alt={a.fileName} className="h-16 w-16 rounded border border-gray-200 object-cover" />
-          </a>
-        ) : (
-          <a key={a.id} href={`/files/${a.id}`} target="_blank" rel="noreferrer" className="rounded border border-gray-200 px-2 py-1 text-xs text-blue-700 hover:underline">
-            📄 {a.fileName}
-          </a>
-        ),
-      )}
+      {items.map((a) => (
+        <span key={a.id} className="relative inline-block">
+          {a.mimeType.startsWith("image/") ? (
+            <a href={`${base}/${a.id}`} target="_blank" rel="noreferrer" title={a.fileName}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`${base}/${a.id}`} alt={a.fileName} className="h-16 w-16 rounded border border-gray-200 object-cover" />
+            </a>
+          ) : (
+            <a href={`${base}/${a.id}`} target="_blank" rel="noreferrer" className="inline-block rounded border border-gray-200 px-2 py-1 text-xs text-blue-700 hover:underline">
+              📄 {a.fileName}
+            </a>
+          )}
+          {a.uploadedByAccountId && customerTag && <span className="absolute -bottom-1 left-0 rounded bg-blue-600 px-1 text-[9px] leading-tight text-white">{customerTag}</span>}
+        </span>
+      ))}
     </div>
   );
 }

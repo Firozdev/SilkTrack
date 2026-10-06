@@ -1,0 +1,140 @@
+import { notFound } from "next/navigation";
+import { ActionForm } from "@/components/action-form";
+import { A, Alert, Card, Dl, Table, inputCls, tdCls } from "@/components/ui";
+import { BD_TZ, fmtDateTime, fmtDay, today } from "@/lib/dates";
+import { docNo, fmtBdt } from "@/lib/format";
+import { requirePortalAccount } from "@/lib/portal-session";
+import { portalOrder } from "@/server/portal";
+import { portalQuoteAction } from "../../../actions";
+import { fill } from "../../../i18n";
+import { portalLabel } from "../../../labels";
+import { getDict } from "../../../lang";
+import { PStatus, Timeline } from "../../../portal-ui";
+import { FilesCard } from "../../upload-box";
+
+export default async function PortalRequestPage({ params }: PageProps<"/portal/requests/[id]">) {
+  const acc = await requirePortalAccount();
+  const { lang, t } = await getDict();
+  const { id } = await params;
+  const o = await portalOrder(acc.customer.id, id);
+  if (!o) notFound();
+  const q = o.quote;
+  const awaiting = q?.status === "SENT_TO_CUSTOMER";
+  const expired = !!q && q.validUntil < today(BD_TZ);
+  const files = [...o.attachments, ...o.lines.flatMap((l) => l.attachments)];
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-xl font-semibold">{docNo("order", o.number)}</h1>
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+          <PStatus lang={lang} value={o.status === "REQUESTED" ? o.requestStatus : o.status} /> {portalLabel(o.shippingMethod, lang)} ·{" "}
+          {fill(t.sentOn, { date: fmtDateTime(o.requestedAt, BD_TZ) })}
+        </p>
+      </div>
+      {awaiting && !expired && <Alert tone="warn">{fill(t.quoteReady, { total: fmtBdt(q.grandTotalBdt), date: fmtDay(q.validUntil) })}</Alert>}
+      {awaiting && expired && <Alert tone="info">{t.quoteExpired}</Alert>}
+
+      {q && (
+        <Card title={`${t.quoteTitle} ${docNo("estimate", q.number)}${q.version > 1 ? ` (v${q.version})` : ""}`} actions={<PStatus lang={lang} value={q.status} />}>
+          <Table head={[t.colProducts, t.qty.replace(" *", ""), t.colPrice]}>
+            {q.lines.map((l) => (
+              <tr key={l.id}>
+                <td className={tdCls}>{l.productName}</td>
+                <td className={tdCls}>{l.quantity}</td>
+                <td className={tdCls}>{fmtBdt(l.sellingPriceBdt)}</td>
+              </tr>
+            ))}
+          </Table>
+          <p className="mt-2 text-sm">
+            {t.total} <b>{fmtBdt(q.grandTotalBdt)}</b> · {fill(t.validUntil, { date: fmtDay(q.validUntil) })}
+          </p>
+          {awaiting && !expired && q.estimateId && (
+            <div className="mt-3 flex flex-wrap items-start gap-4 border-t border-gray-100 pt-3">
+              <ActionForm action={portalQuoteAction} submitLabel={t.approveQuote} confirm={t.approveConfirm} inline>
+                <input type="hidden" name="estimateId" value={q.estimateId} />
+                <input type="hidden" name="orderId" value={o.id} />
+                <input type="hidden" name="decision" value="APPROVE" />
+              </ActionForm>
+              <ActionForm action={portalQuoteAction} submitLabel={t.declineQuote} variant="danger" confirm={t.declineConfirm} inline>
+                <input type="hidden" name="estimateId" value={q.estimateId} />
+                <input type="hidden" name="orderId" value={o.id} />
+                <input type="hidden" name="decision" value="DECLINE" />
+                <input name="reason" placeholder={t.declineReason} className={`${inputCls} max-w-xs`} />
+              </ActionForm>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {o.lines.map((l) => (
+        <Card key={l.id} title={`${l.productName} × ${l.quantity}`} actions={<PStatus lang={lang} value={l.status} />}>
+          <p className="mb-2 text-sm text-gray-500">
+            {[l.color, l.size, l.model].filter(Boolean).join(" · ")}
+            {l.links.map((x) => (
+              <a key={x.url} href={x.url} target="_blank" rel="noreferrer noopener" className="ml-2 text-blue-700 hover:underline">
+                {t.link} ↗
+              </a>
+            ))}
+          </p>
+          <Timeline
+            tz={BD_TZ}
+            lang={lang}
+            events={l.trackingEvents.map((e) => ({
+              id: e.id,
+              status: e.status,
+              occurredAt: e.occurredAt,
+              note: <span className="text-gray-500">{[e.shipment?.code, e.courier, e.trackingNo].filter(Boolean).join(" · ")}</span>,
+            }))}
+          />
+        </Card>
+      ))}
+
+      <FilesCard t={t} files={files} kind="order" id={o.id} canUpload={!["CANCELLED", "DELIVERED"].includes(o.status)} />
+
+      {(o.invoices.length > 0 || o.payments.length > 0) && (
+        <Card title={t.billsPayments}>
+          {o.invoices.map((inv) => (
+            <Dl
+              key={inv.id}
+              items={[
+                [`${t.invoice} ${docNo("invoice", inv.number)}`, <PStatus key="s" lang={lang} value={inv.status} />],
+                [t.total, fmtBdt(inv.totalBdt)],
+                [t.advancePaid, fmtBdt(inv.advancePaidBdt)],
+                [t.balanceDue, <b key="b">{fmtBdt(inv.balanceDueBdt)}</b>],
+              ]}
+            />
+          ))}
+          <ul className="mt-3 space-y-1 text-sm">
+            {o.payments.map((p) => (
+              <li key={p.id}>
+                {fmtDateTime(p.paidAt, BD_TZ)} · {portalLabel(p.type, lang)} · <b>{fmtBdt(p.amountBdt)}</b> ({portalLabel(p.method, lang)})
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-sm">{fill(t.paidTotal, { amount: fmtBdt(o.paid) })}</p>
+        </Card>
+      )}
+
+      {o.deliveries.length > 0 && (
+        <Card title={t.delivery}>
+          {o.deliveries.map((d) => (
+            <p key={d.id} className="text-sm">
+              <PStatus lang={lang} value={d.status} /> {portalLabel(d.courier, lang)} {d.trackingNo && `· ${d.trackingNo}`}{" "}
+              {d.deliveredAt && `· ${fill(t.deliveredOn, { date: fmtDateTime(d.deliveredAt, BD_TZ) })}`}
+            </p>
+          ))}
+        </Card>
+      )}
+
+      {o.samples.length > 0 && (
+        <Card title={t.samples}>
+          {o.samples.map((s) => (
+            <p key={s.id} className="text-sm">
+              <A href={`/portal/samples/${s.id}`}>{docNo("sample", s.number)}</A> <PStatus lang={lang} value={s.status} />
+            </p>
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+}

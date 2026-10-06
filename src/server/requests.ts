@@ -100,6 +100,23 @@ export async function findOrCreateCustomer(tx: Prisma.TransactionClient, c: Cust
 
 export async function createRequest(actor: Actor, input: RequestInput) {
   assertCan(actor.role, "request:edit");
+  return insertRequest(input, { actorId: actor.id, source: "STAFF" });
+}
+
+export type PortalRequestInput = Omit<RequestInput, "customer" | "type" | "priority" | "allowDuplicates" | "specialInstructions">;
+
+/**
+ * A customer submits a request in the portal. No duplicate-link check (it would
+ * reveal other customers' orders); CS sees it as a New request.
+ */
+export async function createPortalRequest(customerId: string, input: PortalRequestInput) {
+  const res = await insertRequest({ ...input, customer: { id: customerId, name: "", phone: "", address: "" }, allowDuplicates: true }, { source: "PORTAL", customerId });
+  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_REQUEST", title: `Portal request: ${docNo("order", res.order.number)}`, body: `${res.order.lines.length} product(s) from a customer – review and send to China.`, orderId: res.order.id });
+  return res;
+}
+
+async function insertRequest(input: RequestInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string }) {
+  const actorId = by.source === "STAFF" ? by.actorId : null;
   if (input.lines.length === 0) throw new UserError("Add at least one product");
 
   const allLinks = input.lines.flatMap((l) => l.links);
@@ -122,11 +139,12 @@ export async function createRequest(actor: Actor, input: RequestInput) {
   const type = input.type ?? suggested;
 
   const order = await prisma.$transaction(async (tx) => {
-    const customer = await findOrCreateCustomer(tx, input.customer, actor.id);
+    const customerId = by.source === "PORTAL" ? by.customerId : (await findOrCreateCustomer(tx, input.customer, by.actorId)).id;
     const order = await tx.order.create({
       data: {
-        customerId: customer.id,
-        createdById: actor.id,
+        customerId,
+        source: by.source,
+        createdById: actorId,
         type,
         typeOverridden: type !== suggested,
         shippingMethod: input.shippingMethod,
@@ -144,13 +162,13 @@ export async function createRequest(actor: Actor, input: RequestInput) {
             quantity: l.quantity,
             notes: l.notes,
             links: { create: l.links.map((url) => ({ url, normalizedUrl: normalizeUrl(url), platform: detectPlatform(url) })) },
-            trackingEvents: { create: { leg: "SUPPLIER_TO_CHINA", status: "REQUESTED", message: "Request created", createdById: actor.id } },
+            trackingEvents: { create: { leg: "SUPPLIER_TO_CHINA", status: "REQUESTED", message: by.source === "PORTAL" ? "Request submitted in the customer portal" : "Request created", createdById: actorId } },
           })),
         },
       },
       include: { lines: { orderBy: { lineNo: "asc" } } },
     });
-    await logChanges(tx, { entityType: "Order", entityId: order.id, userId: actor.id, action: "CREATE" });
+    await logChanges(tx, { entityType: "Order", entityId: order.id, userId: actorId, action: "CREATE" });
     return order;
   });
   return { order, suggestedType: suggested };
@@ -162,7 +180,7 @@ async function loadOrder(orderId: string) {
   return order;
 }
 
-async function setRequestStatus(tx: Prisma.TransactionClient, orderId: string, from: string, to: Prisma.OrderUpdateInput["requestStatus"], actorId: string) {
+async function setRequestStatus(tx: Prisma.TransactionClient, orderId: string, from: string, to: Prisma.OrderUpdateInput["requestStatus"], actorId: string | null) {
   await tx.order.update({ where: { id: orderId }, data: { requestStatus: to } });
   await logChanges(tx, { entityType: "Order", entityId: orderId, userId: actorId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: from, newValue: to as string }] });
 }
@@ -184,13 +202,18 @@ export async function sendToChina(actor: Actor, orderId: string) {
 /** Customer accepted the quote. Purchase is released once an advance is recorded. */
 export async function markCustomerApproved(actor: Actor, orderId: string) {
   assertCan(actor.role, "quote:edit");
+  await applyCustomerApproval(orderId, actor.id, "Customer approved the quote");
+}
+
+/** Shared by CS (actorId) and the customer in the portal (null). */
+export async function applyCustomerApproval(orderId: string, actorId: string | null, message: string) {
   const order = await loadOrder(orderId);
   if (order.requestStatus !== "QUOTED" && order.requestStatus !== "SAMPLING") throw new UserError("Only quoted requests can be approved");
   const unpriced = order.lines.filter((l) => l.status !== "CANCELLED" && !l.quotedUnitPriceRmb);
   if (unpriced.length) throw new UserError("Every product needs a quoted price before approval");
   await prisma.$transaction(async (tx) => {
-    await setRequestStatus(tx, orderId, order.requestStatus, "CUSTOMER_APPROVED", actor.id);
-    await setLineStatus(tx, order.lines.map((l) => l.id), "APPROVED", { actorId: actor.id, message: "Customer approved the quote", onlyForward: true });
+    await setRequestStatus(tx, orderId, order.requestStatus, "CUSTOMER_APPROVED", actorId);
+    await setLineStatus(tx, order.lines.map((l) => l.id), "APPROVED", { actorId, message, onlyForward: true });
   });
   if (hasAdvance(order.payments)) {
     await notifyPurchaseReleased(order.id, order.number);
@@ -219,11 +242,15 @@ async function notifyPurchaseReleased(orderId: string, number: number) {
 
 export async function markRejected(actor: Actor, orderId: string) {
   assertCan(actor.role, "quote:edit");
+  await applyCustomerRejection(orderId, actor.id, "Customer rejected the quote");
+}
+
+export async function applyCustomerRejection(orderId: string, actorId: string | null, message: string) {
   const order = await loadOrder(orderId);
   if (!["QUOTED", "SAMPLING", "SENT_TO_CHINA", "NEW"].includes(order.requestStatus)) throw new UserError("This request can't be rejected now");
   await prisma.$transaction(async (tx) => {
-    await setRequestStatus(tx, orderId, order.requestStatus, "REJECTED", actor.id);
-    await setLineStatus(tx, order.lines.map((l) => l.id), "CANCELLED", { actorId: actor.id, message: "Customer rejected the quote" });
+    await setRequestStatus(tx, orderId, order.requestStatus, "REJECTED", actorId);
+    await setLineStatus(tx, order.lines.map((l) => l.id), "CANCELLED", { actorId, message });
   });
 }
 
