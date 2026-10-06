@@ -7,7 +7,7 @@ import { formAction } from "@/lib/action";
 import { fields, files, rows, zBool, zDec, zDecOpt, zIntMin0, zIntPos, zStrOpt } from "@/lib/forms";
 import { splitLinks } from "@/lib/links";
 import { requireUser } from "@/lib/session";
-import { saveAttachments } from "@/lib/uploads";
+import { saveAttachments, saveLineFiles } from "@/lib/uploads";
 import {
   addComment,
   cancelOrder,
@@ -63,7 +63,7 @@ export const createRequestAction = formAction(async (fd) => {
   });
   for (const [i, l] of lineRows.entries()) {
     const imgs = files(fd, `lines.${l._i}.images`);
-    if (imgs.length) await saveAttachments(imgs, "PRODUCT_IMAGE", user.id, { orderLineId: order.lines[i].id });
+    if (imgs.length) await saveLineFiles(imgs, user.id, { orderLineId: order.lines[i].id });
   }
   revalidatePath("/requests");
   redirect(`/requests/${order.id}`);

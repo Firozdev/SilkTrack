@@ -36,8 +36,8 @@ export function PortalRequestForm({ t }: { t: Dict }) {
                 <Field label={t.notes}>
                   <input name={`lines.${k}.notes`} className={inputCls} />
                 </Field>
-                <Field label={t.photos}>
-                  <input type="file" name={`lines.${k}.images`} accept="image/*" multiple className="text-sm" />
+                <Field label={t.lineFiles}>
+                  <input type="file" name={`lines.${k}.images`} accept="image/*,application/pdf" multiple className="text-sm" />
                 </Field>
               </div>
               {keys.length > 1 && (

@@ -80,8 +80,8 @@ export function RequestForm({ bulkQty, customer }: { bulkQty: number; customer?:
             <Field label="Notes" className="sm:col-span-3">
               <input name={`lines.${k}.notes`} className={inputCls} />
             </Field>
-            <Field label="Images" className="sm:col-span-3">
-              <input name={`lines.${k}.images`} type="file" accept="image/*" multiple className="text-sm" />
+            <Field label="Files (photo / PDF)" className="sm:col-span-3">
+              <input name={`lines.${k}.images`} type="file" accept="image/*,application/pdf" multiple className="text-sm" />
             </Field>
           </div>
         </Card>

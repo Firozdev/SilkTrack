@@ -596,6 +596,11 @@ model Attachment {
   shippingOrder       ShippingOrder?     @relation(fields: [shippingOrderId], references: [id], onDelete: Cascade)
   paymentSubmissionId String?
   paymentSubmission   PaymentSubmission? @relation(fields: [paymentSubmissionId], references: [id], onDelete: Cascade)
+  /// File for one product line of a shipping order / sample.
+  shippingOrderItemId String?
+  shippingOrderItem   ShippingOrderItem? @relation(fields: [shippingOrderItemId], references: [id], onDelete: Cascade)
+  sampleLineId        String?
+  sampleLine          SampleLine?        @relation(fields: [sampleLineId], references: [id], onDelete: Cascade)
 }
 
 /// Customer money in BDT: advance before purchase, balance on delivery, refunds.
@@ -828,6 +833,8 @@ model SampleLine {
   /// Product link (1688, Taobao…) for stand-alone samples.
   link        String?
   quantity    Int
+
+  attachments Attachment[]
 }
 
 /// The sample's own tracking timeline.
@@ -954,6 +961,8 @@ model ShippingOrderItem {
   trackingNo       String?
   quantityReceived Int?
   condition        ReceivingCondition?
+
+  attachments Attachment[]
 
   @@unique([shippingOrderId, lineNo])
   @@index([trackingNo])

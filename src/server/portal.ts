@@ -25,7 +25,7 @@ export function portalAttachment(customerId: string, id: string) {
     where: {
       id,
       ...VISIBLE_FILE,
-      OR: [{ shippingOrder: { customerId } }, { order: { customerId } }, { orderLine: { order: { customerId } } }, { sample: { customerId } }, { delivery: { order: { customerId } } }, { paymentSubmission: { customerId } }],
+      OR: [{ shippingOrder: { customerId } }, { order: { customerId } }, { orderLine: { order: { customerId } } }, { sample: { customerId } }, { delivery: { order: { customerId } } }, { paymentSubmission: { customerId } }, { shippingOrderItem: { shippingOrder: { customerId } } }, { sampleLine: { sample: { customerId } } }],
     },
     select: { storageKey: true, mimeType: true, fileName: true },
   });
@@ -143,7 +143,7 @@ export async function portalShippingOrder(customerId: string, id: string) {
       cbm: true,
       receivedBdAt: true,
       shipment: { select: { code: true, status: true, etaBd: true, departedAt: true, arrivedAt: true } },
-      items: { orderBy: { lineNo: "asc" }, select: { id: true, lineNo: true, productName: true, description: true, quantity: true, courierName: true, trackingNo: true, quantityReceived: true, condition: true } },
+      items: { orderBy: { lineNo: "asc" }, select: { id: true, lineNo: true, productName: true, description: true, quantity: true, courierName: true, trackingNo: true, quantityReceived: true, condition: true, attachments: fileSelect } },
       billWeightKg: true,
       billCbm: true,
       shipRatePerKgBdt: true,
@@ -181,7 +181,7 @@ export async function portalSample(customerId: string, id: string) {
       status: true,
       requestedAt: true,
       order: { select: { id: true, number: true } },
-      lines: { select: { id: true, productName: true, variant: true, quantity: true } },
+      lines: { select: { id: true, productName: true, variant: true, quantity: true, attachments: fileSelect } },
       totalBdt: true,
       invoicedAt: true,
       shippingMode: true,

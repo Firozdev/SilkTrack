@@ -43,3 +43,11 @@ export async function readAttachment(storageKey: string): Promise<Buffer> {
   const file = path.join(UPLOAD_DIR, path.basename(storageKey));
   return readFile(file);
 }
+
+/** Product-line files: images are stored as product images, PDFs as other files. */
+export async function saveLineFiles(files: File[], uploader: string | { accountId: string }, owner: Owner) {
+  const images = files.filter((f) => f.type.startsWith("image/"));
+  const others = files.filter((f) => !f.type.startsWith("image/"));
+  if (images.length) await saveAttachments(images, "PRODUCT_IMAGE", uploader, owner);
+  if (others.length) await saveAttachments(others, "OTHER", uploader, owner);
+}

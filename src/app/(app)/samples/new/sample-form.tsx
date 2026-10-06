@@ -30,6 +30,9 @@ export function SampleForm({ customer }: { customer?: CustomerValue }) {
               <Field label="Qty *">
                 <input name={`p.${k}.quantity`} type="number" min={1} defaultValue={1} required className={inputCls} />
               </Field>
+              <Field label="Files (photo / PDF)" className="sm:col-span-4">
+                <input name={`p.${k}.files`} type="file" accept="image/*,application/pdf" multiple className="text-sm" />
+              </Field>
               {keys.length > 1 && (
                 <button type="button" className={btnCls} onClick={() => setKeys(keys.filter((x) => x !== k))}>
                   Remove

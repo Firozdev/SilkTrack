@@ -8,6 +8,7 @@ import { dayFromYmd } from "@/lib/dates";
 import { fields, files, rows, zDec, zDecOpt, zIntMin0, zStrOpt, zYmd, zYmdOpt } from "@/lib/forms";
 import { requireUser } from "@/lib/session";
 import { saveAttachments } from "@/lib/uploads";
+import { saveSampleLineFiles } from "@/server/line-files";
 import { cancelSample, createStandaloneSample, deliverSample, invoiceSample, markSampleInvoiceSent, purchaseSample, receiveSampleBd, recordSamplePayment, requestSample, shipSample } from "@/server/samples";
 
 type U = Awaited<ReturnType<typeof requireUser>>;
@@ -117,6 +118,7 @@ export const createStandaloneAction = formAction(async (fd) => {
   });
   const photos = files(fd, "photos");
   if (photos.length) await saveAttachments(photos, "PRODUCT_IMAGE", user.id, { sampleId: s.id });
+  await saveSampleLineFiles(fd, lines, s.id, user.id);
   revalidatePath("/samples");
   redirect(`/samples/${s.id}`);
 });

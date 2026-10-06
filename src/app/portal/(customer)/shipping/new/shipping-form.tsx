@@ -31,6 +31,9 @@ export function PortalShippingForm({ t }: { t: Dict }) {
               <Field label={t.trackingNo} className="sm:col-span-2">
                 <input name={`p.${k}.trackingNo`} className={inputCls} />
               </Field>
+              <Field label={t.lineFiles} className="sm:col-span-4">
+                <input type="file" name={`p.${k}.files`} accept="image/*,application/pdf" multiple className="text-sm" />
+              </Field>
               {keys.length > 1 && (
                 <button type="button" className={btnCls} onClick={() => setKeys(keys.filter((x) => x !== k))}>
                   {t.remove}

@@ -29,7 +29,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
       invoicedBy: { select: { name: true } },
       purchasedBy: { select: { name: true } },
       shipment: { select: { id: true, code: true } },
-      lines: true,
+      lines: { include: { attachments: { select: { id: true, fileName: true, mimeType: true, uploadedByAccountId: true } } } },
       events: { orderBy: { occurredAt: "asc" }, include: { createdBy: { select: { name: true } } } },
       payments: { orderBy: { paidAt: "asc" } },
       attachments: { select: { id: true, fileName: true, mimeType: true } },
@@ -75,6 +75,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                       link ↗
                     </a>
                   )}
+                  <Attachments items={l.attachments} />
                 </li>
               ))}
             </ul>

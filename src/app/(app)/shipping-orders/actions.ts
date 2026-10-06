@@ -7,6 +7,7 @@ import { formAction } from "@/lib/action";
 import { fields, files, rows, zBool, zDec, zDecOpt, zIntMin0, zStrOpt } from "@/lib/forms";
 import { requireUser } from "@/lib/session";
 import { saveAttachments } from "@/lib/uploads";
+import { saveItemFiles } from "@/server/line-files";
 import {
   assignShippingOrder,
   cancelShippingOrder,
@@ -72,6 +73,7 @@ export const createShippingOrderAction = formAction(async (fd) => {
   });
   const photos = files(fd, "photos");
   if (photos.length) await saveAttachments(photos, "PRODUCT_IMAGE", user.id, { shippingOrderId: s.id });
+  await saveItemFiles(fd, items, s.id, user.id);
   revalidatePath("/shipping-orders");
   redirect(`/shipping-orders/${s.id}`);
 });

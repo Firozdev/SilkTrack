@@ -51,7 +51,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
       qaBy: { select: { name: true } },
       invoicedBy: { select: { name: true } },
       shipment: { select: { id: true, code: true, status: true, etaBd: true, cutoffDate: true } },
-      items: { orderBy: { lineNo: "asc" } },
+      items: { orderBy: { lineNo: "asc" }, include: { attachments: { select: { id: true, fileName: true, mimeType: true, uploadedByAccountId: true } } } },
       cartons: true,
       events: { orderBy: { occurredAt: "asc" }, include: { createdBy: { select: { name: true } } } },
       payments: { orderBy: { paidAt: "asc" } },
@@ -118,6 +118,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
                       <div className="text-sm sm:col-span-2">
                         <b>{i.productName}</b> × {i.quantity}
                         {i.description && <div className="text-xs text-gray-500">{i.description}</div>}
+                        <Attachments items={i.attachments} />
                       </div>
                       <Field label="Courier (China)" className="sm:col-span-2">
                         <input name={`t.${i.lineNo}.courierName`} defaultValue={i.courierName ?? ""} className={inputCls} />
@@ -495,7 +496,19 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
   );
 }
 
-function ItemList({ items, received }: { items: { id: string; productName: string; description: string | null; quantity: number; courierName: string | null; trackingNo: string | null; quantityReceived: number | null; condition: string | null }[]; received?: boolean }) {
+type ItemRow = {
+  id: string;
+  productName: string;
+  description: string | null;
+  quantity: number;
+  courierName: string | null;
+  trackingNo: string | null;
+  quantityReceived: number | null;
+  condition: string | null;
+  attachments: { id: string; fileName: string; mimeType: string; uploadedByAccountId: string | null }[];
+};
+
+function ItemList({ items, received }: { items: ItemRow[]; received?: boolean }) {
   return (
     <ul className="space-y-1 text-sm">
       {items.map((i) => (
@@ -507,6 +520,7 @@ function ItemList({ items, received }: { items: { id: string; productName: strin
               received {i.quantityReceived} {i.condition && <Badge value={i.condition} />}
             </span>
           )}
+          <Attachments items={i.attachments} />
         </li>
       ))}
     </ul>

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
-import { A, Alert, Card, Dl, Table, inputCls, tdCls } from "@/components/ui";
+import { A, Alert, Attachments, Card, Dl, Table, inputCls, tdCls } from "@/components/ui";
 import { BD_TZ, fmtDateTime, fmtDay, today } from "@/lib/dates";
 import { docNo, fmtBdt } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
@@ -24,7 +24,7 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
   const q = o.quote;
   const awaiting = q?.status === "SENT_TO_CUSTOMER";
   const expired = !!q && q.validUntil < today(BD_TZ);
-  const files = [...o.attachments, ...o.lines.flatMap((l) => l.attachments)];
+  const files = o.attachments;
   return (
     <div className="space-y-5">
       <div>
@@ -79,6 +79,11 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
               </a>
             ))}
           </p>
+          {l.attachments.length > 0 && (
+            <div className="mb-3">
+              <Attachments items={l.attachments} base="/portal/files" customerTag={null} />
+            </div>
+          )}
           <Timeline
             tz={BD_TZ}
             lang={lang}

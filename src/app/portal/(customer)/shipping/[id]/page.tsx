@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
-import { Alert, Card, Dl, Field, inputCls } from "@/components/ui";
+import { Alert, Attachments, Card, Dl, Field, inputCls } from "@/components/ui";
 import { BD_TZ, fmtDateTime, fmtDay } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
@@ -46,6 +46,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
                     <div className="text-sm sm:col-span-2">
                       <b>{i.productName}</b> × {i.quantity}
                       {i.description && <div className="text-xs text-gray-500">{i.description}</div>}
+                      <Attachments items={i.attachments} base="/portal/files" customerTag={null} />
                     </div>
                     <Field label={t.chinaCourier} className="sm:col-span-2">
                       <input name={`t.${i.lineNo}.courierName`} defaultValue={i.courierName ?? ""} className={inputCls} />
@@ -68,6 +69,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
                       </span>
                     )}
                     <span className="ml-2 text-xs text-gray-400">{[i.courierName, i.trackingNo].filter(Boolean).join(" ")}</span>
+                    <Attachments items={i.attachments} base="/portal/files" customerTag={null} />
                   </li>
                 ))}
               </ul>

@@ -8,6 +8,7 @@ import { fields, files, rows, zBool, zDecOpt, zIntMin0, zIntPos, zStrOpt, zYmd }
 import { dayFromYmd } from "@/lib/dates";
 import { submitPayment } from "@/server/payment-submissions";
 import { confirmReceipt } from "@/server/receipts";
+import { saveItemFiles } from "@/server/line-files";
 import { splitLinks } from "@/lib/links";
 import { prisma } from "@/lib/prisma";
 import { saveAttachments } from "@/lib/uploads";
@@ -127,6 +128,7 @@ export const portalShippingAction = portalAction(async (fd) => {
   const s = await createPortalShippingOrder(acc.customer.id, { ...h, items });
   const photos = files(fd, "photos");
   if (photos.length) await saveCustomerFiles(photos, acc.id, { shippingOrderId: s.id });
+  await saveItemFiles(fd, items, s.id, { accountId: acc.id });
   revalidatePath("/portal");
   redirect(`/portal/shipping/${s.id}`);
 });
