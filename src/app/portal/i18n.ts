@@ -201,6 +201,16 @@ const en = {
   editHint: "You can change or cancel this until we start working on it.",
   attachedFiles: "Already attached: {n} file(s)",
   back: "Back",
+  // Shipping estimate (Admin rate card)
+  estTitle: "Estimated cost",
+  estShipping: "Shipping ({qty} × {rate})",
+  estTotal: "Estimated total",
+  estNoteDeclared: "Based on your estimated weight / CBM. The final bill uses the weight measured at our China warehouse.",
+  estNoteMeasured: "Based on the weight / CBM measured at our China warehouse. You get the final bill when it arrives in Bangladesh.",
+  estNeedSize: "Enter the estimated weight (air) or CBM (sea) to see the estimated cost.",
+  ratesInfo: "Current shipping rates: {rates}",
+  perKg: "/kg",
+  perCbm: "/CBM",
 };
 
 export type Dict = typeof en;
@@ -392,6 +402,15 @@ const bn: Dict = {
   editHint: "আমরা কাজ শুরু করার আগ পর্যন্ত এটি বদলাতে বা বাতিল করতে পারবেন।",
   attachedFiles: "আগে যুক্ত করা: {n}টি ফাইল",
   back: "ফিরে যান",
+  estTitle: "আনুমানিক খরচ",
+  estShipping: "শিপিং ({qty} × {rate})",
+  estTotal: "আনুমানিক মোট",
+  estNoteDeclared: "আপনার দেওয়া আনুমানিক ওজন / CBM অনুযায়ী। চূড়ান্ত বিল হবে আমাদের চীনের ওয়্যারহাউসে মাপা ওজন অনুযায়ী।",
+  estNoteMeasured: "আমাদের চীনের ওয়্যারহাউসে মাপা ওজন / CBM অনুযায়ী। বাংলাদেশে পৌঁছালে চূড়ান্ত বিল পাবেন।",
+  estNeedSize: "আনুমানিক খরচ দেখতে আনুমানিক ওজন (এয়ার) বা CBM (সি) দিন।",
+  ratesInfo: "বর্তমান শিপিং রেট: {rates}",
+  perKg: "/কেজি",
+  perCbm: "/CBM",
 };
 
 export const DICTS: Record<Lang, Dict> = { en, bn };

@@ -6,12 +6,30 @@ import { Card, Field, btnCls, inputCls } from "@/components/ui";
 import type { ActionState } from "@/lib/action";
 import { portalShippingAction } from "../../../actions";
 import type { Dict } from "../../../i18n";
+import type { RateCard } from "@/lib/shipping-estimate";
+import { EstimateBox } from "../../estimate-box";
 
 export type ShippingItemInit = { id: string; productName: string; description: string; quantity: number; courierName: string; trackingNo: string; files: number };
 export type ShippingInit = { id: string; shippingMethod: "AIR" | "SEA"; qaRequested: boolean; declaredWeightKg: string; declaredCbm: string; customerNotes: string; items: ShippingItemInit[] };
 
 /** New shipping order, or editing one (`initial` + `action`). */
-export function PortalShippingForm({ t, initial, action = portalShippingAction, submitLabel }: { t: Dict; initial?: ShippingInit; action?: (p: ActionState, fd: FormData) => Promise<ActionState>; submitLabel?: string }) {
+export function PortalShippingForm({
+  t,
+  rates,
+  initial,
+  action = portalShippingAction,
+  submitLabel,
+}: {
+  t: Dict;
+  rates: RateCard;
+  initial?: ShippingInit;
+  action?: (p: ActionState, fd: FormData) => Promise<ActionState>;
+  submitLabel?: string;
+}) {
+  const [method, setMethod] = useState<"AIR" | "SEA">(initial?.shippingMethod ?? "AIR");
+  const [weight, setWeight] = useState(initial?.declaredWeightKg ?? "");
+  const [cbm, setCbm] = useState(initial?.declaredCbm ?? "");
+  const [qa, setQa] = useState(initial?.qaRequested ?? false);
   const start = initial?.items.length ? initial.items.map((_, i) => i) : [0];
   const [keys, setKeys] = useState(start);
   const [next, setNext] = useState(start.length);
@@ -65,19 +83,19 @@ export function PortalShippingForm({ t, initial, action = portalShippingAction, 
       <Card title={t.shipping}>
         <div className="grid gap-3 sm:grid-cols-4">
           <Field label={t.colShipBy}>
-            <select name="shippingMethod" defaultValue={initial?.shippingMethod ?? "AIR"} className={inputCls}>
+            <select name="shippingMethod" value={method} onChange={(e) => setMethod(e.target.value as "AIR" | "SEA")} className={inputCls}>
               <option value="AIR">{t.air}</option>
               <option value="SEA">{t.sea}</option>
             </select>
           </Field>
           <Field label={t.estWeight}>
-            <input name="declaredWeightKg" inputMode="decimal" defaultValue={initial?.declaredWeightKg} className={inputCls} />
+            <input name="declaredWeightKg" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} className={inputCls} />
           </Field>
           <Field label={t.estCbm}>
-            <input name="declaredCbm" inputMode="decimal" defaultValue={initial?.declaredCbm} className={inputCls} />
+            <input name="declaredCbm" inputMode="decimal" value={cbm} onChange={(e) => setCbm(e.target.value)} className={inputCls} />
           </Field>
           <label className="flex items-center gap-2 self-center pt-4 text-sm">
-            <input type="checkbox" name="qaRequested" defaultChecked={initial?.qaRequested} className="h-4 w-4" /> {t.qaCheck}
+            <input type="checkbox" name="qaRequested" checked={qa} onChange={(e) => setQa(e.target.checked)} className="h-4 w-4" /> {t.qaCheck}
           </label>
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -87,6 +105,9 @@ export function PortalShippingForm({ t, initial, action = portalShippingAction, 
           <Field label={t.filesHint}>
             <input type="file" name="photos" accept="image/*,application/pdf" multiple className="text-sm" />
           </Field>
+        </div>
+        <div className="mt-3">
+          <EstimateBox t={t} rates={rates} method={method} weightKg={weight} cbm={cbm} qa={qa} />
         </div>
       </Card>
     </ActionForm>

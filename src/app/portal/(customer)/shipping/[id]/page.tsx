@@ -12,6 +12,8 @@ import { getDict } from "../../../lang";
 import { PStatus, Timeline } from "../../../portal-ui";
 import { FilesCard } from "../../upload-box";
 import { EditBar } from "../../edit-bar";
+import { EstimateBox } from "../../estimate-box";
+import { rateCard } from "@/server/settings";
 import { portalShippingEditable } from "@/lib/editability";
 import { PaymentBox, ReceiptBox } from "../../payment-box";
 import { amountDue } from "@/server/payment-submissions";
@@ -22,7 +24,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
   const { id } = await params;
   const s = await portalShippingOrder(acc.customer.id, id);
   if (!s) notFound();
-  const due = await amountDue(acc.customer.id, { kind: "shipping", id: s.id });
+  const [due, rates] = await Promise.all([amountDue(acc.customer.id, { kind: "shipping", id: s.id }), rateCard()]);
   const air = s.shippingMethod === "AIR";
   const money = (label: string, v: { gt(n: number): boolean } | null, text: string): [string, string][] => (v?.gt(0) ? [[label, text]] : []);
   return (
@@ -104,6 +106,17 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
               ]}
             />
           </Card>
+          {!s.invoiceTotalBdt && s.status !== "CANCELLED" && (
+            <EstimateBox
+              t={t}
+              rates={rates}
+              method={s.shippingMethod}
+              weightKg={(s.grossWeightKg ?? s.declaredWeightKg)?.toString()}
+              cbm={(s.cbm ?? s.declaredCbm)?.toString()}
+              qa={s.qaRequested}
+              measured={!!s.grossWeightKg}
+            />
+          )}
           <PaymentBox t={t} lang={lang} kind="shipping" id={s.id} due={due?.due ?? null} submissions={s.paymentSubmissions} />
           {s.invoiceTotalBdt && (
             <Card title={t.invoice}>

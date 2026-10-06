@@ -7,10 +7,11 @@ import { portalShippingOrder } from "@/server/portal";
 import { portalShippingUpdateAction } from "../../../../actions";
 import { getDict } from "../../../../lang";
 import { PortalShippingForm } from "../../new/shipping-form";
+import { rateCard } from "@/server/settings";
 
 export default async function PortalEditShippingPage({ params }: PageProps<"/portal/shipping/[id]/edit">) {
   const acc = await requirePortalAccount();
-  const { t } = await getDict();
+  const [{ t }, rates] = await Promise.all([getDict(), rateCard()]);
   const { id } = await params;
   const s = await portalShippingOrder(acc.customer.id, id);
   if (!s) notFound();
@@ -25,6 +26,7 @@ export default async function PortalEditShippingPage({ params }: PageProps<"/por
       </h1>
       <PortalShippingForm
         t={t}
+        rates={rates}
         action={portalShippingUpdateAction}
         submitLabel={t.saveChanges}
         initial={{

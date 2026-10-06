@@ -14,6 +14,8 @@ import { defaultShippingRates, shippingInvoiceMessage, shippingNo } from "@/serv
 import { SendInvoice } from "../../samples/[id]/send-invoice";
 import { Step, Waiting } from "../../samples/[id]/step";
 import { CustomerPanel } from "../../customer-panel";
+import { estimateShipping } from "@/lib/shipping-estimate";
+import { rateCard } from "@/server/settings";
 import {
   assignAction,
   cancelAction,
@@ -77,6 +79,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
     china && active && ["RECEIVED_CHINA", "QA_DONE", "IN_SHIPMENT"].includes(st) ? acceptingShipments(s.shippingMethod) : Promise.resolve([]),
     bd && active && ["RECEIVED_BD", "INVOICED"].includes(st) ? defaultShippingRates() : Promise.resolve(null),
   ]);
+  const est = showMoney && !raw.invoiceTotalBdt ? estimateShipping({ method: s.shippingMethod, weightKg: (s.grossWeightKg ?? s.declaredWeightKg)?.toString(), cbm: (s.cbm ?? s.declaredCbm)?.toString(), qa: s.qaRequested }, await rateCard()) : null;
   const invoiceText = showMoney && raw.invoiceTotalBdt ? shippingInvoiceMessage(raw, s.customer.name, paid) : "";
   const str = (v: { toString(): string } | null | undefined) => (v === null || v === undefined ? "" : v.toString());
   const qaPhotos = s.attachments.filter((a) => a.kind === "QA_PHOTO");
@@ -462,6 +465,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
               items={[
                 ["Customer estimate", s.declaredWeightKg || s.declaredCbm ? `${fmtKg(s.declaredWeightKg)} · ${fmtCbm(s.declaredCbm)}` : "—"],
                 ["China warehouse", s.grossWeightKg ? `${s.cartonCount} ctn · ${fmtKg(s.grossWeightKg)} · ${fmtCbm(s.cbm)}` : "—"],
+                ...(est ? ([["Estimate (rate card)", `≈ ${fmtBdt(est.total)} – ${s.grossWeightKg ? "measured" : "customer's"} size`]] as [string, string][]) : []),
                 ["Shipment", s.shipment ? <A key="s" href={`/shipments/${s.shipment.id}`}>{s.shipment.code}</A> : "—"],
                 ["Delivery", s.deliveryCourier ? `${humanize(s.deliveryCourier)}${s.deliveryTrackingNo ? ` · ${s.deliveryTrackingNo}` : ""}` : "—"],
               ]}
