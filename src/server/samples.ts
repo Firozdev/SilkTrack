@@ -240,6 +240,7 @@ async function addSamplePayment(tx: Tx, s: { id: string; orderId: string | null 
   });
   await logChanges(tx, { entityType: "Payment", entityId: p.id, userId: actorId, action: "CREATE" });
   await tx.sampleEvent.create({ data: { sampleId: s.id, message: `${note} ৳${D(input.amountBdt).toFixed(2)} (${input.method.toLowerCase().replace(/_/g, " ")})`, createdById: actorId } });
+  return p;
 }
 
 /** BD records money received for the sample. Can't exceed the remaining balance. */
@@ -254,11 +255,13 @@ export async function recordSamplePayment(actor: Actor, id: string, input: { amo
   if (amount.gt(before.balance)) throw new UserError(`That is more than the balance due (৳${before.balance.toFixed(2)})`);
   const after = sampleAmounts(s, before.paid.add(amount));
   const released = s.status === "AWAITING_PAYMENT" && after.upfrontDue.isZero();
-  await prisma.$transaction(async (tx) => {
-    await addSamplePayment(tx, s, actor.id, input, s.status === "AWAITING_PAYMENT" && !released ? "Partial payment" : "Payment received");
+  const payment = await prisma.$transaction(async (tx) => {
+    const p = await addSamplePayment(tx, s, actor.id, input, s.status === "AWAITING_PAYMENT" && !released ? "Partial payment" : "Payment received");
     if (released) await move(tx, s, "PAID", actor.id, "Purchase amount paid – China can buy the sample");
+    return p;
   });
   if (released) await notifyRoles(["PURCHASE"], { type: "SAMPLE_PAID", title: `Sample paid – buy now: ${label(s)}`, body: ref(s), orderId: s.orderId });
+  return payment;
 }
 
 export type SamplePurchaseInput = { supplierName: string; supplierOrderNo?: string; purchaseTrackingUrl: string; expectedAtWarehouseAt: Date };

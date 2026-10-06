@@ -25,11 +25,17 @@ export function portalAttachment(customerId: string, id: string) {
     where: {
       id,
       ...VISIBLE_FILE,
-      OR: [{ shippingOrder: { customerId } }, { order: { customerId } }, { orderLine: { order: { customerId } } }, { sample: { customerId } }, { delivery: { order: { customerId } } }],
+      OR: [{ shippingOrder: { customerId } }, { order: { customerId } }, { orderLine: { order: { customerId } } }, { sample: { customerId } }, { delivery: { order: { customerId } } }, { paymentSubmission: { customerId } }],
     },
     select: { storageKey: true, mimeType: true, fileName: true },
   });
 }
+
+const submissionSelect = {
+  orderBy: { createdAt: "desc" as const },
+  select: { id: true, number: true, amountBdt: true, method: true, reference: true, paidAt: true, status: true, rejectReason: true, createdAt: true },
+};
+const receiptSelect = { customerConfirmedAt: true, customerNote: true, customerReportedProblem: true } as const;
 
 const paidOf = (rows: { type: string; amountBdt: Decimal }[]) => sum(rows.map((p) => (p.type === "REFUND" ? D(p.amountBdt).neg() : D(p.amountBdt))));
 
@@ -71,6 +77,8 @@ export async function portalOrder(customerId: string, orderId: string) {
       targetBudgetBdt: true,
       customerNotes: true,
       requestedAt: true,
+      ...receiptSelect,
+      paymentSubmissions: submissionSelect,
       attachments: fileSelect,
       lines: {
         orderBy: { lineNo: "asc" },
@@ -154,6 +162,8 @@ export async function portalShippingOrder(customerId: string, id: string) {
       payments: { orderBy: { paidAt: "asc" }, select: { id: true, type: true, amountBdt: true, method: true, paidAt: true } },
       events: { where: { status: { not: null } }, orderBy: { occurredAt: "asc" }, select: { id: true, status: true, occurredAt: true } },
       attachments: fileSelect,
+      ...receiptSelect,
+      paymentSubmissions: submissionSelect,
     },
   });
   if (!s) return null;
@@ -185,6 +195,8 @@ export async function portalSample(customerId: string, id: string) {
       payments: { orderBy: { paidAt: "asc" }, select: { id: true, type: true, amountBdt: true, method: true, paidAt: true } },
       events: { where: { status: { not: null } }, orderBy: { occurredAt: "asc" }, select: { id: true, status: true, occurredAt: true } },
       attachments: fileSelect,
+      ...receiptSelect,
+      paymentSubmissions: submissionSelect,
     },
   });
   if (!s) return null;

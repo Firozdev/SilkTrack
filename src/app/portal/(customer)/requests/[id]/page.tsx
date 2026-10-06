@@ -11,6 +11,8 @@ import { portalLabel } from "../../../labels";
 import { getDict } from "../../../lang";
 import { PStatus, Timeline } from "../../../portal-ui";
 import { FilesCard } from "../../upload-box";
+import { PaymentBox, ReceiptBox } from "../../payment-box";
+import { amountDue } from "@/server/payment-submissions";
 
 export default async function PortalRequestPage({ params }: PageProps<"/portal/requests/[id]">) {
   const acc = await requirePortalAccount();
@@ -18,6 +20,7 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
   const { id } = await params;
   const o = await portalOrder(acc.customer.id, id);
   if (!o) notFound();
+  const due = await amountDue(acc.customer.id, { kind: "order", id: o.id });
   const q = o.quote;
   const awaiting = q?.status === "SENT_TO_CUSTOMER";
   const expired = !!q && q.validUntil < today(BD_TZ);
@@ -89,6 +92,16 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
         </Card>
       ))}
 
+      <PaymentBox t={t} lang={lang} kind="order" id={o.id} due={due?.due ?? null} submissions={o.paymentSubmissions} />
+      <ReceiptBox
+        t={t}
+        kind="order"
+        id={o.id}
+        canConfirm={["OUT_FOR_DELIVERY", "DELIVERED"].includes(o.status)}
+        confirmedAt={o.customerConfirmedAt}
+        note={o.customerNote}
+        problem={o.customerReportedProblem}
+      />
       <FilesCard t={t} files={files} kind="order" id={o.id} canUpload={!["CANCELLED", "DELIVERED"].includes(o.status)} />
 
       {(o.invoices.length > 0 || o.payments.length > 0) && (

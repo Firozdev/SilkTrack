@@ -10,6 +10,7 @@ import { requireUser } from "@/lib/session";
 import { getOrderView } from "@/server/order-view";
 import { isReleasedForPurchase } from "@/server/requests";
 import { requestSampleAction } from "../../samples/actions";
+import { CustomerPanel } from "../../customer-panel";
 import {
   cancelAction,
   commentAction,
@@ -68,6 +69,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
         <Alert tone="info">In the China purchase queue – waiting for the China team to request the upfront payment.</Alert>
       )}
       {released && order.status === "APPROVED" && <Alert tone="ok">Upfront payment confirmed – the China team can purchase now.</Alert>}
+      {can(user.role, "price:viewSelling") && <CustomerPanel kind="order" id={order.id} tz={user.timezone} />}
 
       <div className="grid gap-5 xl:grid-cols-3">
         <div className="space-y-5 xl:col-span-2">

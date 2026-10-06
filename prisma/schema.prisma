@@ -229,6 +229,14 @@ enum PortalAccountStatus {
   DISABLED
 }
 
+/// A payment the customer reports in the portal; CS checks it against the
+/// bKash / bank statement and approves it into a real Payment, or rejects it.
+enum PaymentSubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum PortalTokenPurpose {
   PASSWORD_RESET
 }
@@ -351,6 +359,7 @@ model User {
   shippingEvents     ShippingOrderEvent[]
   portalReviews      PortalAccount[]      @relation("PortalAccountReviewedBy")
   portalTokens       PortalToken[]
+  paymentReviews     PaymentSubmission[]  @relation("PaymentSubmissionReviewedBy")
   comments           Comment[]
   attachments        Attachment[]
   paymentsReceived   Payment[]
@@ -422,11 +431,12 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  orders         Order[]
-  samples        Sample[]
-  shippingOrders ShippingOrder[]
-  portalAccounts PortalAccount[]
-  notifications  Notification[]
+  orders             Order[]
+  samples            Sample[]
+  shippingOrders     ShippingOrder[]
+  portalAccounts     PortalAccount[]
+  paymentSubmissions PaymentSubmission[]
+  notifications      Notification[]
 
   @@index([phone])
 }
@@ -458,21 +468,28 @@ model Order {
   advanceRequestedById String?
   advanceRequestedBy   User?          @relation("AdvanceRequestedBy", fields: [advanceRequestedById], references: [id])
   advanceRequestNote   String?
-  requestedAt          DateTime       @default(now())
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
 
-  lines         OrderLine[]
-  comments      Comment[]
-  attachments   Attachment[]
-  payments      Payment[]
-  estimates     Estimate[]
-  samples       Sample[]
-  issues        Issue[]
-  invoices      Invoice[]
-  deliveries    Delivery[]
-  claims        Claim[]
-  notifications Notification[]
+  // Customer confirms receipt in the portal
+  customerConfirmedAt     DateTime?
+  /// Customer's note on receipt (feedback or a problem).
+  customerNote            String?
+  customerReportedProblem Boolean   @default(false)
+  requestedAt             DateTime  @default(now())
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  lines              OrderLine[]
+  comments           Comment[]
+  attachments        Attachment[]
+  payments           Payment[]
+  estimates          Estimate[]
+  samples            Sample[]
+  issues             Issue[]
+  invoices           Invoice[]
+  deliveries         Delivery[]
+  claims             Claim[]
+  notifications      Notification[]
+  paymentSubmissions PaymentSubmission[]
 
   @@index([status])
   @@index([requestStatus])
@@ -557,26 +574,28 @@ model Attachment {
   uploadedByAccount   PortalAccount? @relation(fields: [uploadedByAccountId], references: [id])
   createdAt           DateTime       @default(now())
 
-  orderId         String?
-  order           Order?         @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderLineId     String?
-  orderLine       OrderLine?     @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
-  commentId       String?
-  comment         Comment?       @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  supplierOrderId String?
-  supplierOrder   SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: Cascade)
-  receivingId     String?
-  receiving       Receiving?     @relation(fields: [receivingId], references: [id], onDelete: Cascade)
-  issueId         String?
-  issue           Issue?         @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  deliveryId      String?
-  delivery        Delivery?      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
-  claimId         String?
-  claim           Claim?         @relation(fields: [claimId], references: [id], onDelete: Cascade)
-  sampleId        String?
-  sample          Sample?        @relation(fields: [sampleId], references: [id], onDelete: Cascade)
-  shippingOrderId String?
-  shippingOrder   ShippingOrder? @relation(fields: [shippingOrderId], references: [id], onDelete: Cascade)
+  orderId             String?
+  order               Order?             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderLineId         String?
+  orderLine           OrderLine?         @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  commentId           String?
+  comment             Comment?           @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  supplierOrderId     String?
+  supplierOrder       SupplierOrder?     @relation(fields: [supplierOrderId], references: [id], onDelete: Cascade)
+  receivingId         String?
+  receiving           Receiving?         @relation(fields: [receivingId], references: [id], onDelete: Cascade)
+  issueId             String?
+  issue               Issue?             @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  deliveryId          String?
+  delivery            Delivery?          @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  claimId             String?
+  claim               Claim?             @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  sampleId            String?
+  sample              Sample?            @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  shippingOrderId     String?
+  shippingOrder       ShippingOrder?     @relation(fields: [shippingOrderId], references: [id], onDelete: Cascade)
+  paymentSubmissionId String?
+  paymentSubmission   PaymentSubmission? @relation(fields: [paymentSubmissionId], references: [id], onDelete: Cascade)
 }
 
 /// Customer money in BDT: advance before purchase, balance on delivery, refunds.
@@ -601,6 +620,8 @@ model Payment {
   receivedBy      User           @relation(fields: [receivedById], references: [id])
   paidAt          DateTime
   createdAt       DateTime       @default(now())
+
+  submission PaymentSubmission?
 
   @@index([orderId])
 }
@@ -776,13 +797,20 @@ model Sample {
   deliveredAt      DateTime?
   customerFeedback String?
 
+  // Customer confirms receipt in the portal
+  customerConfirmedAt     DateTime?
+  /// Customer's note on receipt (feedback or a problem).
+  customerNote            String?
+  customerReportedProblem Boolean   @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  lines       SampleLine[]
-  events      SampleEvent[]
-  payments    Payment[]
-  attachments Attachment[]
+  lines              SampleLine[]
+  events             SampleEvent[]
+  payments           Payment[]
+  attachments        Attachment[]
+  paymentSubmissions PaymentSubmission[]
 
   @@index([status])
   @@index([orderId])
@@ -890,14 +918,21 @@ model ShippingOrder {
   deliveredAt        DateTime?
   receiverName       String?
 
+  // Customer confirms receipt in the portal
+  customerConfirmedAt     DateTime?
+  /// Customer's note on receipt (feedback or a problem).
+  customerNote            String?
+  customerReportedProblem Boolean   @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  items       ShippingOrderItem[]
-  cartons     ShippingOrderCarton[]
-  events      ShippingOrderEvent[]
-  payments    Payment[]
-  attachments Attachment[]
+  items              ShippingOrderItem[]
+  cartons            ShippingOrderCarton[]
+  events             ShippingOrderEvent[]
+  payments           Payment[]
+  attachments        Attachment[]
+  paymentSubmissions PaymentSubmission[]
 
   @@index([status])
   @@index([customerId])
@@ -1366,9 +1401,10 @@ model PortalAccount {
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
-  sessions    PortalSession[]
-  tokens      PortalToken[]
-  attachments Attachment[]
+  sessions           PortalSession[]
+  tokens             PortalToken[]
+  attachments        Attachment[]
+  paymentSubmissions PaymentSubmission[]
 
   @@index([status])
   @@index([customerId])
@@ -1399,6 +1435,46 @@ model PortalToken {
   createdById String?
   createdBy   User?              @relation(fields: [createdById], references: [id])
   createdAt   DateTime           @default(now())
+}
+
+/// Customer says "I paid": amount, method and transaction ID (+ screenshot).
+/// Exactly one of orderId / shippingOrderId / sampleId is set.
+model PaymentSubmission {
+  id              String                  @id @default(cuid())
+  /// Shown as PS-000001.
+  number          Int                     @unique @default(autoincrement())
+  customerId      String
+  customer        Customer                @relation(fields: [customerId], references: [id])
+  accountId       String
+  account         PortalAccount           @relation(fields: [accountId], references: [id])
+  orderId         String?
+  order           Order?                  @relation(fields: [orderId], references: [id])
+  shippingOrderId String?
+  shippingOrder   ShippingOrder?          @relation(fields: [shippingOrderId], references: [id])
+  sampleId        String?
+  sample          Sample?                 @relation(fields: [sampleId], references: [id])
+  amountBdt       Decimal                 @db.Decimal(14, 2)
+  method          PaymentMethod
+  /// bKash / Nagad TrxID or bank reference.
+  reference       String
+  paidAt          DateTime
+  note            String?
+  status          PaymentSubmissionStatus @default(PENDING)
+  reviewedById    String?
+  reviewedBy      User?                   @relation("PaymentSubmissionReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+  rejectReason    String?
+  /// The Payment created on approval.
+  paymentId       String?                 @unique
+  payment         Payment?                @relation(fields: [paymentId], references: [id])
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  attachments Attachment[]
+
+  @@index([status])
+  @@index([customerId])
+  @@index([reference])
 }
 
 // ───────────────────────── Cross-cutting ─────────────────────────

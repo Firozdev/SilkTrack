@@ -12,6 +12,7 @@ const ITEMS: { href: string; label: string; need?: Action; roles?: Role[] }[] = 
   { href: "/shipments", label: "Shipments" },
   { href: "/issues", label: "Issues" },
   { href: "/customers", label: "Customers", need: "request:edit" },
+  { href: "/payments-to-verify", label: "Payments to verify", need: "payment:record" },
   { href: "/portal-accounts", label: "Portal accounts", need: "request:edit" },
   { href: "/rates", label: "Exchange rates" },
 ];

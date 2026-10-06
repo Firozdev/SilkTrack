@@ -13,6 +13,7 @@ import { acceptingShipments } from "@/server/shipments";
 import { defaultShippingRates, shippingInvoiceMessage, shippingNo } from "@/server/shipping-orders";
 import { SendInvoice } from "../../samples/[id]/send-invoice";
 import { Step, Waiting } from "../../samples/[id]/step";
+import { CustomerPanel } from "../../customer-panel";
 import {
   assignAction,
   cancelAction,
@@ -96,6 +97,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
       {held && <Alert tone="warn">On hold – see the tracking below for the reason.</Alert>}
       {s.qaResult === "FAILED" && st === "QA_DONE" && <Alert tone="error">QA test failed. Tell the China team to ship anyway, or put the order on hold.</Alert>}
       {s.customerNotes && <Alert tone="info">Customer notes: {s.customerNotes}</Alert>}
+      {showMoney && <CustomerPanel kind="shipping" id={s.id} tz={user.timezone} />}
 
       <div className="grid gap-5 xl:grid-cols-3">
         <div className="space-y-5 xl:col-span-2">

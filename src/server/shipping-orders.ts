@@ -349,7 +349,7 @@ export async function recordShippingPayment(actor: Actor, id: string, input: { a
   const { balance } = await shippingBalance(s);
   if (amount.gt(balance)) throw new UserError(`That is more than the balance due (৳${balance.toFixed(2)})`);
   const settled = amount.eq(balance);
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     const p = await tx.payment.create({
       data: { shippingOrderId: id, type: "SHIPPING_SERVICE", amountBdt: amount, method: input.method, reference: input.reference, receivedById: actor.id, paidAt: new Date() },
     });
@@ -357,6 +357,7 @@ export async function recordShippingPayment(actor: Actor, id: string, input: { a
     const msg = `${settled ? "Payment received" : "Partial payment"} ৳${amount.toFixed(2)} (${input.method.toLowerCase().replace(/_/g, " ")})`;
     if (settled) await move(tx, s, "READY_FOR_DELIVERY", actor.id, `${msg} – fully paid, ready for delivery`);
     else await tx.shippingOrderEvent.create({ data: { shippingOrderId: id, message: msg, createdById: actor.id } });
+    return p;
   });
 }
 
@@ -376,6 +377,45 @@ export async function deliverShipping(actor: Actor, id: string, receiverName?: s
   const s = await load(id);
   requireStatus(s, ["OUT_FOR_DELIVERY"], "Dispatch the order first");
   await prisma.$transaction((tx) => move(tx, s, "DELIVERED", actor.id, `Delivered${receiverName ? ` – received by ${receiverName}` : ""}`, { deliveredAt: new Date(), receiverName: receiverName ?? null }));
+}
+
+/**
+ * The customer confirms in the portal that they received the goods. While out
+ * for delivery this completes the delivery; afterwards it only adds the note.
+ */
+export async function confirmShippingReceipt(customerId: string, id: string, input: { note?: string; problem: boolean }) {
+  const s = await load(id);
+  if (s.customerId !== customerId) throw new UserError("Shipping order not found");
+  if (!["OUT_FOR_DELIVERY", "DELIVERED"].includes(s.status)) throw new UserError("You can confirm once the order is out for delivery");
+  const data = receiptData(s, input);
+  const msg = `Customer confirmed receipt${input.problem ? " – PROBLEM reported" : ""}${input.note ? `: ${input.note}` : ""}`;
+  await prisma.$transaction(async (tx) => {
+    if (s.status === "OUT_FOR_DELIVERY") await move(tx, s, "DELIVERED", null, msg, { ...data, deliveredAt: new Date(), receiverName: s.receiverName ?? "Customer (portal)" });
+    else {
+      await tx.shippingOrder.update({ where: { id }, data });
+      await tx.shippingOrderEvent.create({ data: { shippingOrderId: id, message: s.customerConfirmedAt ? `Customer added a note${input.problem ? " – PROBLEM reported" : ""}: ${input.note ?? ""}` : msg } });
+    }
+  });
+  await notifyReceipt(shippingNo(s), input, undefined);
+}
+
+/** Fields to save for a receipt confirmation; later notes are appended with the date. */
+export function receiptData(prev: { customerConfirmedAt: Date | null; customerNote: string | null; customerReportedProblem: boolean }, input: { note?: string; problem: boolean }, now = new Date()) {
+  const note = input.note?.trim();
+  return {
+    customerConfirmedAt: prev.customerConfirmedAt ?? now,
+    customerNote: !note ? prev.customerNote : prev.customerNote ? `${prev.customerNote}\n[${now.toISOString().slice(0, 10)}] ${note}` : note,
+    customerReportedProblem: prev.customerReportedProblem || input.problem,
+  };
+}
+
+export async function notifyReceipt(ref: string, input: { note?: string; problem: boolean }, orderId: string | undefined) {
+  await notifyRoles(input.problem ? ["CS", "ADMIN"] : ["CS"], {
+    type: input.problem ? "CUSTOMER_PROBLEM_REPORTED" : "CUSTOMER_CONFIRMED_RECEIPT",
+    title: `${input.problem ? "⚠ Problem reported" : "Received by customer"}: ${ref}`,
+    body: input.note || (input.problem ? "The customer reported a problem – contact them." : "The customer confirmed they received the goods."),
+    orderId,
+  });
 }
 
 // ───────────────────────── Hold / cancel ─────────────────────────

@@ -11,6 +11,8 @@ import { portalLabel } from "../../../labels";
 import { getDict } from "../../../lang";
 import { PStatus, Timeline } from "../../../portal-ui";
 import { FilesCard } from "../../upload-box";
+import { PaymentBox, ReceiptBox } from "../../payment-box";
+import { amountDue } from "@/server/payment-submissions";
 
 export default async function PortalShippingPage({ params }: PageProps<"/portal/shipping/[id]">) {
   const acc = await requirePortalAccount();
@@ -18,6 +20,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
   const { id } = await params;
   const s = await portalShippingOrder(acc.customer.id, id);
   if (!s) notFound();
+  const due = await amountDue(acc.customer.id, { kind: "shipping", id: s.id });
   const air = s.shippingMethod === "AIR";
   const money = (label: string, v: { gt(n: number): boolean } | null, text: string): [string, string][] => (v?.gt(0) ? [[label, text]] : []);
   return (
@@ -73,6 +76,15 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
           <Card title={t.tracking}>
             <Timeline tz={BD_TZ} lang={lang} events={s.events} />
           </Card>
+          <ReceiptBox
+            t={t}
+            kind="shipping"
+            id={s.id}
+            canConfirm={["OUT_FOR_DELIVERY", "DELIVERED"].includes(s.status)}
+            confirmedAt={s.customerConfirmedAt}
+            note={s.customerNote}
+            problem={s.customerReportedProblem}
+          />
           <FilesCard t={t} files={s.attachments} kind="shipping" id={s.id} canUpload={!["DELIVERED", "CANCELLED"].includes(s.status)} />
         </div>
         <div className="space-y-5">
@@ -87,6 +99,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
               ]}
             />
           </Card>
+          <PaymentBox t={t} lang={lang} kind="shipping" id={s.id} due={due?.due ?? null} submissions={s.paymentSubmissions} />
           {s.invoiceTotalBdt && (
             <Card title={t.invoice}>
               <Dl

@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { formAction, type ActionState } from "@/lib/action";
-import { fields, files, rows, zBool, zDecOpt, zIntMin0, zIntPos, zStrOpt } from "@/lib/forms";
+import { fields, files, rows, zBool, zDecOpt, zIntMin0, zIntPos, zStrOpt, zYmd } from "@/lib/forms";
+import { dayFromYmd } from "@/lib/dates";
+import { submitPayment } from "@/server/payment-submissions";
+import { confirmReceipt } from "@/server/receipts";
 import { splitLinks } from "@/lib/links";
 import { prisma } from "@/lib/prisma";
 import { saveAttachments } from "@/lib/uploads";
@@ -159,4 +162,42 @@ export const portalQuoteAction = portalAction(async (fd, t) => {
   await decidePortalQuotation(acc.customer.id, f.estimateId, f.decision, f.reason);
   revalidatePath(`/portal/requests/${f.orderId}`);
   return { ok: true, message: f.decision === "APPROVE" ? t.quoteApproved : t.quoteDeclined };
+});
+
+const TARGET = z.object({ kind: z.enum(["order", "shipping", "sample"]), id: z.string().min(1) });
+const revalidateTarget = (kind: string, id: string) => revalidatePath(kind === "order" ? `/portal/requests/${id}` : kind === "shipping" ? `/portal/shipping/${id}` : `/portal/samples/${id}`);
+
+/** "I have paid": the customer reports a payment for CS to verify. */
+export const portalPaymentAction = portalAction(async (fd, t) => {
+  const acc = await requirePortalAccount();
+  const target = TARGET.parse(fields(fd));
+  const f = z
+    .object({
+      amountBdt: z.string().trim().regex(/^\d+(\.\d{1,2})?$/, "Amount must be greater than zero"),
+      method: z.enum(["BKASH", "NAGAD", "ROCKET", "BANK_TRANSFER", "CASH", "CARD", "OTHER"]),
+      reference: z.string(),
+      paidAt: zYmd,
+      note: zStrOpt,
+    })
+    .parse(fields(fd));
+  const s = await submitPayment({ accountId: acc.id, customerId: acc.customer.id }, target, { ...f, paidAt: dayFromYmd(f.paidAt) });
+  const shots = files(fd, "photos");
+  if (shots.length) await saveAttachments(shots, "OTHER", { accountId: acc.id }, { paymentSubmissionId: s.id });
+  revalidateTarget(target.kind, target.id);
+  return { ok: true, message: t.paymentSent };
+});
+
+/** "I received it" with an optional note / problem and photos. */
+export const portalReceiptAction = portalAction(async (fd, t) => {
+  const acc = await requirePortalAccount();
+  const target = TARGET.parse(fields(fd));
+  const f = z.object({ note: zStrOpt, problem: zBool }).parse(fields(fd));
+  await confirmReceipt(acc.customer.id, target.kind, target.id, f);
+  const photos = files(fd, "photos");
+  if (photos.length) {
+    const owner = target.kind === "order" ? { orderId: target.id } : target.kind === "shipping" ? { shippingOrderId: target.id } : { sampleId: target.id };
+    await saveAttachments(photos, "PACKAGE_PHOTO", { accountId: acc.id }, owner);
+  }
+  revalidateTarget(target.kind, target.id);
+  return { ok: true, message: f.problem ? t.receiptProblemThanks : t.receiptThanks };
 });
