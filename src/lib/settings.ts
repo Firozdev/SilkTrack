@@ -7,6 +7,10 @@ export const SETTING_DEFAULTS = {
   price_change_alert_pct: "5",
   bd_weight_tolerance_pct: "5",
   default_local_delivery_bdt: "120.00",
+  /** Shipping-only service (BDT). Blank = use the rate on the last invoice. */
+  shipping_service_air_per_kg_bdt: "",
+  shipping_service_sea_per_cbm_bdt: "",
+  shipping_service_qa_fee_bdt: "",
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

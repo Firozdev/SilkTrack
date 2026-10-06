@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { A, Badge, Card, Dl, PageHeader, Table, btnCls, btnPrimaryCls, tdCls } from "@/components/ui";
 import { fmtDateTime } from "@/lib/dates";
-import { docNo, fmtBdt } from "@/lib/format";
+import { docNo, fmtBdt, humanize } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/session";
 import { customerLedger } from "@/server/ledger";
@@ -15,6 +15,7 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
     include: {
       orders: { orderBy: { requestedAt: "desc" }, include: { _count: { select: { lines: true } } } },
       samples: { orderBy: { requestedAt: "desc" }, include: { lines: true, order: { select: { number: true } } } },
+      shippingOrders: { orderBy: { createdAt: "desc" }, include: { items: true } },
     },
   });
   if (!c) notFound();
@@ -25,6 +26,9 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
         title={`${c.name} (${c.code})`}
         actions={
           <>
+            <Link href={`/shipping-orders/new?customer=${c.id}`} className={btnCls}>
+              + New shipping order
+            </Link>
             <Link href={`/samples/new?customer=${c.id}`} className={btnCls}>
               + New sample
             </Link>
@@ -56,6 +60,23 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
           />
         </Card>
       </div>
+      <Card title="Shipping service" className="mt-5">
+        <Table head={["Order", "Products", "Method", "Created", "Status"]} empty="No shipping orders.">
+          {c.shippingOrders.map((so) => (
+            <tr key={so.id}>
+              <td className={tdCls}>
+                <A href={`/shipping-orders/${so.id}`}>{docNo("shippingOrder", so.number)}</A>
+              </td>
+              <td className={tdCls}>{so.items.map((i) => `${i.productName} × ${i.quantity}`).join(", ")}</td>
+              <td className={tdCls}>{humanize(so.shippingMethod)}</td>
+              <td className={tdCls}>{fmtDateTime(so.createdAt, user.timezone)}</td>
+              <td className={tdCls}>
+                <Badge value={so.status} />
+              </td>
+            </tr>
+          ))}
+        </Table>
+      </Card>
       <Card title="Samples" className="mt-5">
         <Table head={["Sample", "Request", "Products", "Requested", "Status"]} empty="No samples.">
           {c.samples.map((smp) => (

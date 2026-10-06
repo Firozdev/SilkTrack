@@ -6,6 +6,7 @@ const ITEMS: { href: string; label: string; need?: Action; roles?: Role[] }[] = 
   { href: "/requests", label: "Requests" },
   { href: "/estimates", label: "Quotations" },
   { href: "/samples", label: "Samples" },
+  { href: "/shipping-orders", label: "Shipping service" },
   { href: "/purchasing", label: "Purchasing", roles: ["ADMIN", "PURCHASE", "CS"] },
   { href: "/receiving", label: "China receiving", roles: ["ADMIN", "PURCHASE"] },
   { href: "/shipments", label: "Shipments" },

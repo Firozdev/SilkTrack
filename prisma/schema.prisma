@@ -178,6 +178,7 @@ enum PaymentType {
   BALANCE
   REFUND
   SAMPLE
+  SHIPPING_SERVICE
 }
 
 enum SampleStatus {
@@ -190,6 +191,33 @@ enum SampleStatus {
   RECEIVED_BD
   DELIVERED
   CANCELLED
+}
+
+/// Shipping-only service: the customer buys in China themselves; we receive,
+/// optionally QA-test, ship, invoice and deliver.
+enum ShippingOrderStatus {
+  REQUESTED
+  RECEIVED_CHINA
+  QA_DONE
+  IN_SHIPMENT
+  RECEIVED_BD
+  INVOICED
+  READY_FOR_DELIVERY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  ON_HOLD
+}
+
+enum QaResult {
+  PASSED
+  FAILED
+}
+
+/// Who created a record: staff in the app, or the customer via the portal.
+enum RecordSource {
+  STAFF
+  PORTAL
 }
 
 enum SampleShippingMode {
@@ -267,6 +295,7 @@ enum AttachmentKind {
   PACKAGE_PHOTO
   SUPPLIER_INVOICE
   PROOF_OF_DELIVERY
+  QA_PHOTO
   OTHER
 }
 
@@ -295,29 +324,34 @@ model User {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  exchangeRates      ExchangeRate[]    @relation("RateUpdatedBy")
-  ordersCreated      Order[]           @relation("OrderCreatedBy")
-  advanceRequests    Order[]           @relation("AdvanceRequestedBy")
-  samplesRequested   Sample[]          @relation("SampleRequestedBy")
-  samplesInvoiced    Sample[]          @relation("SampleInvoicedBy")
-  samplesPurchased   Sample[]          @relation("SamplePurchasedBy")
+  exchangeRates      ExchangeRate[]       @relation("RateUpdatedBy")
+  ordersCreated      Order[]              @relation("OrderCreatedBy")
+  advanceRequests    Order[]              @relation("AdvanceRequestedBy")
+  samplesRequested   Sample[]             @relation("SampleRequestedBy")
+  samplesInvoiced    Sample[]             @relation("SampleInvoicedBy")
+  samplesPurchased   Sample[]             @relation("SamplePurchasedBy")
   sampleEvents       SampleEvent[]
+  shippingOrders     ShippingOrder[]      @relation("ShippingOrderCreatedBy")
+  shippingReceived   ShippingOrder[]      @relation("ShippingOrderReceivedBy")
+  shippingQa         ShippingOrder[]      @relation("ShippingOrderQaBy")
+  shippingInvoiced   ShippingOrder[]      @relation("ShippingOrderInvoicedBy")
+  shippingEvents     ShippingOrderEvent[]
   comments           Comment[]
   attachments        Attachment[]
   paymentsReceived   Payment[]
-  estimatesCreated   Estimate[]        @relation("EstimateCreatedBy")
-  estimatesReviewed  Estimate[]        @relation("EstimateReviewedBy")
+  estimatesCreated   Estimate[]           @relation("EstimateCreatedBy")
+  estimatesReviewed  Estimate[]           @relation("EstimateReviewedBy")
   supplierOrders     SupplierOrder[]
-  priceApprovals     PurchaseLine[]    @relation("PriceApprovedBy")
+  priceApprovals     PurchaseLine[]       @relation("PriceApprovedBy")
   receivings         Receiving[]
-  issuesReported     Issue[]           @relation("IssueReportedBy")
-  issuesAssigned     Issue[]           @relation("IssueAssignedTo")
+  issuesReported     Issue[]              @relation("IssueReportedBy")
+  issuesAssigned     Issue[]              @relation("IssueAssignedTo")
   bdReceivingChecks  BdReceivingItem[]
   trackingEvents     TrackingEvent[]
   invoicesIssued     Invoice[]
   deliveriesAssigned Delivery[]
-  claimsCreated      Claim[]           @relation("ClaimCreatedBy")
-  claimsDecided      Claim[]           @relation("ClaimDecidedBy")
+  claimsCreated      Claim[]              @relation("ClaimCreatedBy")
+  claimsDecided      Claim[]              @relation("ClaimDecidedBy")
   notifications      Notification[]
   auditLogs          AuditLog[]
   settingsUpdated    Setting[]
@@ -354,6 +388,7 @@ model ExchangeRate {
   supplierOrders SupplierOrder[]
   invoices       Invoice[]
   samples        Sample[]
+  shippingOrders ShippingOrder[]
 }
 
 // ───────────────────────── Module 1: Product requests ─────────────────────────
@@ -372,9 +407,10 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  orders        Order[]
-  samples       Sample[]
-  notifications Notification[]
+  orders         Order[]
+  samples        Sample[]
+  shippingOrders ShippingOrder[]
+  notifications  Notification[]
 
   @@index([phone])
 }
@@ -518,28 +554,32 @@ model Attachment {
   claim           Claim?         @relation(fields: [claimId], references: [id], onDelete: Cascade)
   sampleId        String?
   sample          Sample?        @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  shippingOrderId String?
+  shippingOrder   ShippingOrder? @relation(fields: [shippingOrderId], references: [id], onDelete: Cascade)
 }
 
 /// Customer money in BDT: advance before purchase, balance on delivery, refunds.
 model Payment {
-  id           String        @id @default(cuid())
-  number       Int           @unique @default(autoincrement())
-  /// Null only for payments of stand-alone samples (sampleId set).
-  orderId      String?
-  order        Order?        @relation(fields: [orderId], references: [id])
-  invoiceId    String?
-  invoice      Invoice?      @relation(fields: [invoiceId], references: [id])
-  sampleId     String?
-  sample       Sample?       @relation(fields: [sampleId], references: [id])
-  type         PaymentType
-  amountBdt    Decimal       @db.Decimal(14, 2)
-  method       PaymentMethod
-  reference    String?
-  note         String?
-  receivedById String
-  receivedBy   User          @relation(fields: [receivedById], references: [id])
-  paidAt       DateTime
-  createdAt    DateTime      @default(now())
+  id              String         @id @default(cuid())
+  number          Int            @unique @default(autoincrement())
+  /// Null for payments of stand-alone samples and shipping-only orders.
+  orderId         String?
+  order           Order?         @relation(fields: [orderId], references: [id])
+  invoiceId       String?
+  invoice         Invoice?       @relation(fields: [invoiceId], references: [id])
+  sampleId        String?
+  sample          Sample?        @relation(fields: [sampleId], references: [id])
+  shippingOrderId String?
+  shippingOrder   ShippingOrder? @relation(fields: [shippingOrderId], references: [id])
+  type            PaymentType
+  amountBdt       Decimal        @db.Decimal(14, 2)
+  method          PaymentMethod
+  reference       String?
+  note            String?
+  receivedById    String
+  receivedBy      User           @relation(fields: [receivedById], references: [id])
+  paidAt          DateTime
+  createdAt       DateTime       @default(now())
 
   @@index([orderId])
 }
@@ -751,6 +791,140 @@ model SampleEvent {
   createdBy   User?         @relation(fields: [createdById], references: [id])
 
   @@index([sampleId, occurredAt])
+}
+
+// ───────────────────────── Shipping-only service ─────────────────────────
+
+/// The customer buys from China themselves and has the supplier send the
+/// goods to our China warehouse. We receive (weight/CBM), optionally QA-test,
+/// put it in a weekly shipment, receive in BD, invoice in BDT and deliver.
+/// Prefix SHO-. Billed on the China warehouse weight (air) or CBM (sea).
+model ShippingOrder {
+  id             String              @id @default(cuid())
+  number         Int                 @unique @default(autoincrement())
+  customerId     String
+  customer       Customer            @relation(fields: [customerId], references: [id])
+  source         RecordSource        @default(STAFF)
+  /// Null when the customer submitted it through the portal.
+  createdById    String?
+  createdBy      User?               @relation("ShippingOrderCreatedBy", fields: [createdById], references: [id])
+  status         ShippingOrderStatus @default(REQUESTED)
+  shippingMethod ShippingMethod      @default(AIR)
+  /// Customer asked for a QA test at the China warehouse.
+  qaRequested    Boolean             @default(false)
+  customerNotes  String?
+
+  // Customer's estimate (from the request), for reference only
+  declaredWeightKg Decimal? @db.Decimal(10, 3)
+  declaredCbm      Decimal? @db.Decimal(10, 4)
+
+  // China warehouse receiving
+  receivedChinaAt   DateTime?
+  receivedChinaById String?
+  receivedChinaBy   User?     @relation("ShippingOrderReceivedBy", fields: [receivedChinaById], references: [id])
+  cartonCount       Int?
+  cartonMark        String?
+  grossWeightKg     Decimal?  @db.Decimal(10, 3)
+  /// Sum of carton CBM.
+  cbm               Decimal?  @db.Decimal(10, 4)
+
+  // Optional QA test (China team)
+  qaResult QaResult?
+  qaNotes  String?
+  qaById   String?
+  qaBy     User?     @relation("ShippingOrderQaBy", fields: [qaById], references: [id])
+  qaAt     DateTime?
+
+  // China → Bangladesh
+  shipmentId   String?
+  shipment     Shipment? @relation(fields: [shipmentId], references: [id])
+  receivedBdAt DateTime?
+
+  // Invoice (BDT). Air: billWeightKg × ratePerKgBdt; sea: billCbm × ratePerCbmBdt.
+  // Field names are listed in SELLING_FIELDS so PURCHASE never sees them.
+  billWeightKg      Decimal?      @db.Decimal(10, 3)
+  billCbm           Decimal?      @db.Decimal(10, 4)
+  shipRatePerKgBdt  Decimal?      @db.Decimal(14, 2)
+  shipRatePerCbmBdt Decimal?      @db.Decimal(14, 2)
+  shippingChargeBdt Decimal?      @db.Decimal(14, 2)
+  qaFeeBdt          Decimal?      @db.Decimal(14, 2)
+  localDeliveryBdt  Decimal?      @db.Decimal(14, 2)
+  otherChargeBdt    Decimal?      @db.Decimal(14, 2)
+  discountBdt       Decimal?      @db.Decimal(14, 2)
+  invoiceTotalBdt   Decimal?      @db.Decimal(14, 2)
+  /// RMB→BDT rate of the invoice day, saved for the record (charges are BDT).
+  exchangeRateId    String?
+  exchangeRate      ExchangeRate? @relation(fields: [exchangeRateId], references: [id])
+  rateUsed          Decimal?      @db.Decimal(12, 4)
+  invoicedById      String?
+  invoicedBy        User?         @relation("ShippingOrderInvoicedBy", fields: [invoicedById], references: [id])
+  invoicedAt        DateTime?
+
+  // Bangladesh → customer
+  deliveryCourier    DeliveryCourier?
+  deliveryTrackingNo String?
+  dispatchedAt       DateTime?
+  deliveredAt        DateTime?
+  receiverName       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items       ShippingOrderItem[]
+  cartons     ShippingOrderCarton[]
+  events      ShippingOrderEvent[]
+  payments    Payment[]
+  attachments Attachment[]
+
+  @@index([status])
+  @@index([customerId])
+  @@index([shipmentId])
+}
+
+/// One product / parcel the customer expects at our China warehouse, with the
+/// supplier's domestic tracking number used to match it on arrival.
+model ShippingOrderItem {
+  id               String              @id @default(cuid())
+  shippingOrderId  String
+  shippingOrder    ShippingOrder       @relation(fields: [shippingOrderId], references: [id], onDelete: Cascade)
+  lineNo           Int
+  productName      String
+  description      String?
+  quantity         Int
+  /// Supplier → China warehouse courier and tracking number.
+  courierName      String?
+  trackingNo       String?
+  quantityReceived Int?
+  condition        ReceivingCondition?
+
+  @@unique([shippingOrderId, lineNo])
+  @@index([trackingNo])
+}
+
+model ShippingOrderCarton {
+  id              String        @id @default(cuid())
+  shippingOrderId String
+  shippingOrder   ShippingOrder @relation(fields: [shippingOrderId], references: [id], onDelete: Cascade)
+  lengthCm        Decimal       @db.Decimal(8, 2)
+  widthCm         Decimal       @db.Decimal(8, 2)
+  heightCm        Decimal       @db.Decimal(8, 2)
+  /// (L × W × H) / 1,000,000
+  cbm             Decimal       @db.Decimal(10, 4)
+  grossWeightKg   Decimal?      @db.Decimal(10, 3)
+}
+
+/// The shipping order's own tracking timeline.
+model ShippingOrderEvent {
+  id              String               @id @default(cuid())
+  shippingOrderId String
+  shippingOrder   ShippingOrder        @relation(fields: [shippingOrderId], references: [id], onDelete: Cascade)
+  status          ShippingOrderStatus?
+  message         String
+  occurredAt      DateTime             @default(now())
+  createdById     String?
+  createdBy       User?                @relation(fields: [createdById], references: [id])
+
+  @@index([shippingOrderId, occurredAt])
 }
 
 // ───────────────────────── Module 2: China purchasing ─────────────────────────
@@ -998,6 +1172,7 @@ model Shipment {
 
   receivings     Receiving[]
   samples        Sample[]
+  shippingOrders ShippingOrder[]
   bdReceivings   BdReceivingItem[]
   trackingEvents TrackingEvent[]
 
