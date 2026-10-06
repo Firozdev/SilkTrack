@@ -8,6 +8,7 @@ import { docNo } from "@/lib/format";
 import { diffFields, logChanges } from "@/lib/audit";
 import { notifyRoles, queueCustomerMessage } from "@/lib/notify";
 import { getSetting } from "@/lib/settings";
+import { portalShippingEditable } from "@/lib/editability";
 import { rateForConversion } from "./rates";
 import { capacityWarning, isAccepting, recalcTotals, suggestShipment } from "./shipments";
 import { findOrCreateCustomer, type CustomerInput } from "./requests";
@@ -416,6 +417,57 @@ export async function notifyReceipt(ref: string, input: { note?: string; problem
     body: input.note || (input.problem ? "The customer reported a problem – contact them." : "The customer confirmed they received the goods."),
     orderId,
   });
+}
+
+// ───────────────────────── Customer edits in the portal ─────────────────────────
+
+export type PortalShippingEdit = Omit<ShippingOrderInput, "customer" | "items"> & { items: (ShippingItemInput & { id?: string })[] };
+
+async function loadForPortalEdit(customerId: string, id: string) {
+  const s = await prisma.shippingOrder.findFirst({ where: { id, customerId }, include: { items: true } });
+  if (!s) throw new UserError("Shipping order not found");
+  if (!portalShippingEditable(s)) throw new UserError("This shipping order can't be changed any more – message us and we will help");
+  return s;
+}
+
+/**
+ * The customer changes their shipping order before the goods reach our China
+ * warehouse. Returns the item id for each kept input row, in order.
+ */
+export async function updatePortalShippingOrder(customerId: string, id: string, input: PortalShippingEdit) {
+  const s = await loadForPortalEdit(customerId, id);
+  const items = input.items.filter((i) => i.productName.trim() && i.quantity > 0);
+  if (!items.length) throw new UserError("Add at least one product with a quantity");
+  const own = new Set(s.items.map((i) => i.id));
+  if (items.some((i) => i.id && !own.has(i.id))) throw new UserError("Unknown item");
+  const keep = new Set(items.map((i) => i.id).filter(Boolean));
+  const removed = s.items.filter((i) => !keep.has(i.id));
+  const ids = await prisma.$transaction(async (tx) => {
+    await tx.shippingOrder.update({
+      where: { id },
+      data: { shippingMethod: input.shippingMethod, qaRequested: input.qaRequested, declaredWeightKg: input.declaredWeightKg ?? null, declaredCbm: input.declaredCbm ?? null, customerNotes: input.customerNotes ?? null },
+    });
+    if (removed.length) await tx.shippingOrderItem.deleteMany({ where: { id: { in: removed.map((i) => i.id) } } });
+    // Renumber 1..n in the customer's order (temporarily offset to avoid unique clashes).
+    await tx.shippingOrderItem.updateMany({ where: { shippingOrderId: id }, data: { lineNo: { increment: 10_000 } } });
+    const ids: string[] = [];
+    for (const [n, i] of items.entries()) {
+      const data = { lineNo: n + 1, productName: i.productName.trim(), description: i.description ?? null, quantity: i.quantity, courierName: i.courierName ?? null, trackingNo: i.trackingNo?.trim() || null };
+      const row = i.id ? await tx.shippingOrderItem.update({ where: { id: i.id }, data }) : await tx.shippingOrderItem.create({ data: { ...data, shippingOrderId: id } });
+      ids.push(row.id);
+    }
+    await tx.shippingOrderEvent.create({ data: { shippingOrderId: id, message: `Changed by the customer in the portal (${items.length} product(s)${removed.length ? `, ${removed.length} removed` : ""})` } });
+    await logChanges(tx, { entityType: "ShippingOrder", entityId: id, userId: null, action: "UPDATE", changes: [{ field: "customerEdit", oldValue: null, newValue: `${items.length} item(s)` }] });
+    return ids;
+  });
+  await notifyRoles(["CS", "ADMIN", "PURCHASE"], { type: "PORTAL_SHIPPING_EDITED", title: `Customer changed ${shippingNo(s)}`, body: "Products / tracking were updated." });
+  return ids;
+}
+
+export async function cancelPortalShippingOrder(customerId: string, id: string, reason?: string) {
+  const s = await loadForPortalEdit(customerId, id);
+  await prisma.$transaction((tx) => move(tx, s, "CANCELLED", null, `Cancelled by the customer in the portal${reason ? `: ${reason}` : ""}`));
+  await notifyRoles(["CS", "ADMIN", "PURCHASE"], { type: "PORTAL_SHIPPING_CANCELLED", title: `Customer cancelled ${shippingNo(s)}`, body: reason ?? "No reason given." });
 }
 
 // ───────────────────────── Hold / cancel ─────────────────────────

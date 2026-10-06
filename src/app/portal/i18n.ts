@@ -188,6 +188,19 @@ const en = {
   addNote: "Add a note",
   problemReported: "Problem reported",
   yourNote: "Your note",
+  // Customer edits
+  edit: "Edit",
+  editRequest: "Edit request",
+  editShipping: "Edit shipping order",
+  saveChanges: "Save changes",
+  changesSaved: "Changes saved.",
+  cancelOrder: "Cancel",
+  cancelReason: "Reason (optional)",
+  cancelConfirm: "Cancel this? We will stop working on it.",
+  cancelledMsg: "Cancelled.",
+  editHint: "You can change or cancel this until we start working on it.",
+  attachedFiles: "Already attached: {n} file(s)",
+  back: "Back",
 };
 
 export type Dict = typeof en;
@@ -367,6 +380,18 @@ const bn: Dict = {
   addNote: "নোট যোগ করুন",
   problemReported: "সমস্যা জানানো হয়েছে",
   yourNote: "আপনার নোট",
+  edit: "এডিট",
+  editRequest: "অনুরোধ এডিট করুন",
+  editShipping: "শিপিং অর্ডার এডিট করুন",
+  saveChanges: "পরিবর্তন সেভ করুন",
+  changesSaved: "পরিবর্তন সেভ হয়েছে।",
+  cancelOrder: "বাতিল করুন",
+  cancelReason: "কারণ (ঐচ্ছিক)",
+  cancelConfirm: "এটি বাতিল করবেন? আমরা এর কাজ বন্ধ করে দেব।",
+  cancelledMsg: "বাতিল করা হয়েছে।",
+  editHint: "আমরা কাজ শুরু করার আগ পর্যন্ত এটি বদলাতে বা বাতিল করতে পারবেন।",
+  attachedFiles: "আগে যুক্ত করা: {n}টি ফাইল",
+  back: "ফিরে যান",
 };
 
 export const DICTS: Record<Lang, Dict> = { en, bn };
@@ -401,6 +426,7 @@ const ERRORS_BN: [RegExp, string][] = [
   [/^Amount must be greater than zero/, "পরিমাণ শূন্যের বেশি হতে হবে"],
   [/^Tell us what is wrong/, "সমস্যাটি কী, লিখে জানান"],
   [/^You can confirm once/, "ডেলিভারির পথে থাকলে বা ডেলিভারি হলে তবেই নিশ্চিত করা যাবে"],
+  [/can't be changed any more/, "এটি এখন আর বদলানো যাবে না – আমাদের মেসেজ দিন, আমরা সাহায্য করব"],
   [/^Something went wrong/, "কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করুন।"],
   [/not found$/i, "পাওয়া যায়নি"],
 ];

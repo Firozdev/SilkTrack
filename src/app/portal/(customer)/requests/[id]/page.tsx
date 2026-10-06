@@ -11,6 +11,8 @@ import { portalLabel } from "../../../labels";
 import { getDict } from "../../../lang";
 import { PStatus, Timeline } from "../../../portal-ui";
 import { FilesCard } from "../../upload-box";
+import { EditBar } from "../../edit-bar";
+import { portalRequestEditable } from "@/lib/editability";
 import { PaymentBox, ReceiptBox } from "../../payment-box";
 import { amountDue } from "@/server/payment-submissions";
 
@@ -34,6 +36,9 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
           {fill(t.sentOn, { date: fmtDateTime(o.requestedAt, BD_TZ) })}
         </p>
       </div>
+      {portalRequestEditable({ requestStatus: o.requestStatus, estimateCount: o._count.estimates }) && o.status !== "CANCELLED" && (
+        <EditBar t={t} kind="order" id={o.id} editHref={`/portal/requests/${o.id}/edit`} />
+      )}
       {awaiting && !expired && <Alert tone="warn">{fill(t.quoteReady, { total: fmtBdt(q.grandTotalBdt), date: fmtDay(q.validUntil) })}</Alert>}
       {awaiting && expired && <Alert tone="info">{t.quoteExpired}</Alert>}
 

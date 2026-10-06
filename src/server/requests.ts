@@ -9,6 +9,7 @@ import { docNo } from "@/lib/format";
 import { logChanges } from "@/lib/audit";
 import { getSetting } from "@/lib/settings";
 import { notifyRoles } from "@/lib/notify";
+import { portalRequestEditable } from "@/lib/editability";
 import { deriveOrderStatus, setLineStatus, setOrderStatus } from "./status";
 import type { Actor } from "./actor";
 
@@ -373,4 +374,84 @@ export async function chinaInbox() {
     }),
   ]);
   return { sent, awaitingAdvance };
+}
+
+// ───────────────────────── Customer edits in the portal ─────────────────────────
+
+export type PortalLineEdit = LineInput & { id?: string };
+export type PortalRequestEdit = Omit<PortalRequestInput, "lines"> & { lines: PortalLineEdit[] };
+
+async function loadForPortalEdit(customerId: string, orderId: string) {
+  const order = await prisma.order.findFirst({ where: { id: orderId, customerId }, include: { lines: { include: { links: true } }, _count: { select: { estimates: true } } } });
+  if (!order) throw new UserError("Not found");
+  if (!portalRequestEditable({ requestStatus: order.requestStatus, estimateCount: order._count.estimates })) {
+    throw new UserError("This request can't be changed any more – message us and we will help");
+  }
+  return order;
+}
+
+/**
+ * The customer changes their request before we start quoting: header, lines
+ * (add / change / remove) and links. Returns the line id for each input line,
+ * in order (to attach new files).
+ */
+export async function updatePortalRequest(customerId: string, orderId: string, input: PortalRequestEdit) {
+  const order = await loadForPortalEdit(customerId, orderId);
+  const lines = input.lines.filter((l) => l.productName.trim() && l.quantity > 0);
+  if (!lines.length) throw new UserError("Add at least one product");
+  const own = new Map(order.lines.map((l) => [l.id, l]));
+  if (lines.some((l) => l.id && !own.has(l.id))) throw new UserError("Not found");
+  const keep = new Set(lines.map((l) => l.id).filter(Boolean));
+  const removed = order.lines.filter((l) => !keep.has(l.id));
+  const threshold = await getSetting("bulk_threshold");
+  const suggested = suggestType(lines.reduce((a, l) => a + l.quantity, 0), input.targetBudgetBdt, threshold);
+  let nextNo = Math.max(0, ...order.lines.map((l) => l.lineNo)) + 1;
+
+  const ids = await prisma.$transaction(async (tx) => {
+    await tx.order.update({
+      where: { id: orderId },
+      data: { shippingMethod: input.shippingMethod, targetBudgetBdt: input.targetBudgetBdt ?? null, customerNotes: input.customerNotes ?? null, ...(order.typeOverridden ? {} : { type: suggested }) },
+    });
+    if (removed.length) await tx.orderLine.deleteMany({ where: { id: { in: removed.map((l) => l.id) } } });
+    const ids: string[] = [];
+    for (const l of lines) {
+      const data = { productName: l.productName.trim(), color: l.color ?? null, size: l.size ?? null, model: l.model ?? null, quantity: l.quantity, notes: l.notes ?? null };
+      const links = l.links.map((url) => ({ url, normalizedUrl: normalizeUrl(url), platform: detectPlatform(url) }));
+      if (l.id) {
+        await tx.orderLine.update({ where: { id: l.id }, data });
+        const before = own.get(l.id)!.links.map((x) => x.url).sort().join("\n");
+        if (before !== [...l.links].sort().join("\n")) {
+          await tx.productLink.deleteMany({ where: { orderLineId: l.id } });
+          if (links.length) await tx.productLink.createMany({ data: links.map((x) => ({ ...x, orderLineId: l.id! })) });
+        }
+        ids.push(l.id);
+      } else {
+        const created = await tx.orderLine.create({
+          data: { orderId, lineNo: nextNo++, ...data, links: { create: links }, trackingEvents: { create: { leg: "SUPPLIER_TO_CHINA", status: "REQUESTED", message: "Added by the customer in the portal" } } },
+        });
+        ids.push(created.id);
+      }
+    }
+    const summary = [`${lines.length} product(s)`, removed.length ? `${removed.length} removed` : "", lines.some((l) => !l.id) ? `${lines.filter((l) => !l.id).length} added` : ""].filter(Boolean).join(", ");
+    await logChanges(tx, { entityType: "Order", entityId: orderId, userId: null, action: "UPDATE", changes: [{ field: "customerEdit", oldValue: null, newValue: summary }] });
+    return ids;
+  });
+  await notifyRoles(order.requestStatus === "SENT_TO_CHINA" ? ["CS", "ADMIN", "PURCHASE"] : ["CS", "ADMIN"], {
+    type: "PORTAL_REQUEST_EDITED",
+    title: `Customer changed request ${docNo("order", order.number)}`,
+    body: "Check the updated products before quoting.",
+    orderId,
+  });
+  return ids;
+}
+
+/** The customer cancels their request before we start quoting. */
+export async function cancelPortalRequest(customerId: string, orderId: string, reason?: string) {
+  const order = await loadForPortalEdit(customerId, orderId);
+  const msg = `Cancelled by the customer in the portal${reason ? `: ${reason}` : ""}`;
+  await prisma.$transaction(async (tx) => {
+    await setRequestStatus(tx, orderId, order.requestStatus, "CANCELLED", null);
+    await setLineStatus(tx, order.lines.map((l) => l.id), "CANCELLED", { actorId: null, message: msg });
+  });
+  await notifyRoles(order.requestStatus === "SENT_TO_CHINA" ? ["CS", "ADMIN", "PURCHASE"] : ["CS", "ADMIN"], { type: "PORTAL_REQUEST_CANCELLED", title: `Customer cancelled ${docNo("order", order.number)}`, body: reason ?? "No reason given.", orderId });
 }

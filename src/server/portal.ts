@@ -90,6 +90,7 @@ export async function portalOrder(customerId: string, orderId: string) {
           size: true,
           model: true,
           quantity: true,
+          notes: true,
           status: true,
           links: { select: { url: true } },
           attachments: fileSelect,
@@ -115,6 +116,7 @@ export async function portalOrder(customerId: string, orderId: string) {
       payments: { orderBy: { paidAt: "asc" }, select: { id: true, type: true, amountBdt: true, method: true, paidAt: true } },
       deliveries: { orderBy: { createdAt: "asc" }, select: { id: true, status: true, courier: true, trackingNo: true, dispatchedAt: true, deliveredAt: true } },
       samples: { select: { id: true, number: true, status: true } },
+      _count: { select: { estimates: true } },
     },
   });
   if (!o) return null;

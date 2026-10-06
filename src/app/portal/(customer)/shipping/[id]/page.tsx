@@ -11,6 +11,8 @@ import { portalLabel } from "../../../labels";
 import { getDict } from "../../../lang";
 import { PStatus, Timeline } from "../../../portal-ui";
 import { FilesCard } from "../../upload-box";
+import { EditBar } from "../../edit-bar";
+import { portalShippingEditable } from "@/lib/editability";
 import { PaymentBox, ReceiptBox } from "../../payment-box";
 import { amountDue } from "@/server/payment-submissions";
 
@@ -32,6 +34,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
         </p>
       </div>
       {s.status === "REQUESTED" && <Alert tone="info">{fill(t.parcelHint, { code: acc.customer.code })}</Alert>}
+      {portalShippingEditable(s) && <EditBar t={t} kind="shipping" id={s.id} editHref={`/portal/shipping/${s.id}/edit`} />}
       {s.status === "INVOICED" && s.balance.gt(0) && <Alert tone="warn">{fill(t.invoiceReady, { amount: fmtBdt(s.balance) })}</Alert>}
 
       <div className="grid gap-5 lg:grid-cols-3">

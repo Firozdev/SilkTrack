@@ -15,8 +15,8 @@ import { saveAttachments } from "@/lib/uploads";
 import { endPortalSession, getPortalAccount, requirePortalAccount, startPortalSession } from "@/lib/portal-session";
 import { authenticate, resetPassword, signUp } from "@/server/portal-auth";
 import { decidePortalQuotation } from "@/server/estimates";
-import { createPortalRequest } from "@/server/requests";
-import { createPortalShippingOrder, updatePortalShippingTracking } from "@/server/shipping-orders";
+import { cancelPortalRequest, createPortalRequest, updatePortalRequest } from "@/server/requests";
+import { cancelPortalShippingOrder, createPortalShippingOrder, updatePortalShippingOrder, updatePortalShippingTracking } from "@/server/shipping-orders";
 import { UserError } from "@/lib/action";
 import { DICTS, translateError, type Dict, type Lang } from "./i18n";
 import { getLang, setLangCookie } from "./lang";
@@ -202,4 +202,49 @@ export const portalReceiptAction = portalAction(async (fd, t) => {
   }
   revalidateTarget(target.kind, target.id);
   return { ok: true, message: f.problem ? t.receiptProblemThanks : t.receiptThanks };
+});
+
+// ───────── Customer edits / cancels (before we start working on it) ─────────
+
+export const portalRequestUpdateAction = portalAction(async (fd) => {
+  const acc = await requirePortalAccount();
+  const { id } = z.object({ id: z.string().min(1) }).parse(fields(fd));
+  const h = z.object({ shippingMethod: z.enum(["AIR", "SEA"]), targetBudgetBdt: zDecOpt, customerNotes: zStrOpt }).parse(fields(fd));
+  const lines = rows(fd, "lines").map((r) => lineSchema.extend({ id: zStrOpt }).parse(r));
+  const kept = lines.filter((l) => l.productName.trim() && l.quantity > 0);
+  const ids = await updatePortalRequest(acc.customer.id, id, {
+    ...h,
+    lines: kept.map((l) => ({ id: l.id, productName: l.productName, color: l.color, size: l.size, model: l.model, quantity: l.quantity, notes: l.notes, links: splitLinks(l.links) })),
+  });
+  for (const [n, l] of kept.entries()) {
+    const list = files(fd, `lines.${l._i}.images`);
+    if (list.length) await saveCustomerFiles(list, acc.id, { orderLineId: ids[n] });
+  }
+  revalidatePath(`/portal/requests/${id}`);
+  redirect(`/portal/requests/${id}`);
+});
+
+export const portalShippingUpdateAction = portalAction(async (fd) => {
+  const acc = await requirePortalAccount();
+  const { id } = z.object({ id: z.string().min(1) }).parse(fields(fd));
+  const h = z.object({ shippingMethod: z.enum(["AIR", "SEA"]), qaRequested: zBool, declaredWeightKg: zDecOpt, declaredCbm: zDecOpt, customerNotes: zStrOpt }).parse(fields(fd));
+  const items = rows(fd, "p").map((r) =>
+    z.object({ _i: z.string(), id: zStrOpt, productName: z.string().trim().min(1), description: zStrOpt, quantity: zIntMin0, courierName: zStrOpt, trackingNo: zStrOpt }).parse(r),
+  );
+  await updatePortalShippingOrder(acc.customer.id, id, { ...h, items });
+  const photos = files(fd, "photos");
+  if (photos.length) await saveCustomerFiles(photos, acc.id, { shippingOrderId: id });
+  await saveItemFiles(fd, items, id, { accountId: acc.id });
+  revalidatePath(`/portal/shipping/${id}`);
+  redirect(`/portal/shipping/${id}`);
+});
+
+export const portalCancelAction = portalAction(async (fd, t) => {
+  const acc = await requirePortalAccount();
+  const f = z.object({ kind: z.enum(["order", "shipping"]), id: z.string().min(1), reason: zStrOpt }).parse(fields(fd));
+  if (f.kind === "order") await cancelPortalRequest(acc.customer.id, f.id, f.reason);
+  else await cancelPortalShippingOrder(acc.customer.id, f.id, f.reason);
+  revalidateTarget(f.kind, f.id);
+  revalidatePath("/portal");
+  return { ok: true, message: t.cancelledMsg };
 });
