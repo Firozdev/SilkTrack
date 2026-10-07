@@ -14,8 +14,7 @@ const ITEMS: { href: string; label: string; need?: Action; roles?: Role[] }[] = 
   { href: "/customers", label: "Customers", need: "request:edit" },
   { href: "/payments-to-verify", label: "Payments to verify", need: "payment:record" },
   { href: "/portal-accounts", label: "Portal accounts", need: "request:edit" },
-  { href: "/rates", label: "Exchange rates" },
-  { href: "/settings", label: "Settings", need: "settings:manage" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function navFor(role: Role) {

@@ -28,7 +28,7 @@ export const addRateAction = formAction(async (fd) => {
     startsAt = new Date(`${f.startsAt}:00+06:00`);
   }
   await addShippingRate(user, { ...f, startsAt });
-  revalidatePath("/settings");
+  revalidatePath("/settings/shipping-charges");
   return { ok: true, message: startsAt ? "Rate scheduled. It goes live automatically at the start time." : "New rate is live now. Earlier orders keep the rate they were placed with." };
 });
 
@@ -36,7 +36,7 @@ export const deleteRateAction = formAction(async (fd) => {
   const user = await requirePermission("settings:manage");
   const { id } = z.object({ id: z.string().min(1) }).parse(fields(fd));
   await deleteUpcomingRate(user, id);
-  revalidatePath("/settings");
+  revalidatePath("/settings/shipping-charges");
   return { ok: true, message: "Upcoming rate deleted." };
 });
 

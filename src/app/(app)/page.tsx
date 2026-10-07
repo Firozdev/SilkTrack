@@ -36,7 +36,7 @@ export default async function Dashboard() {
             <StatTile label={`Orders · ${mgmt.month.label}`} value={mgmt.month.orders} hint="customer-approved" />
             <StatTile label={`Revenue · ${mgmt.month.label}`} value={fmtBdt(mgmt.month.revenue)} />
             <StatTile label={`Est. profit · ${mgmt.month.label}`} value={fmtBdt(mgmt.month.profit)} hint="purchased orders only" />
-            <StatTile label="Today's rate" value={isToday ? "Entered" : "Missing"} tone={isToday ? "default" : "danger"} href="/rates" />
+            <StatTile label="Today's rate" value={isToday ? "Entered" : "Missing"} tone={isToday ? "default" : "danger"} href="/settings/exchange-rates" />
           </TileRow>
           <div className="grid gap-5 xl:grid-cols-3">
             <Card title="Average lead time per leg">
