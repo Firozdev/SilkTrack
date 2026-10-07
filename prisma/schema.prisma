@@ -223,6 +223,8 @@ enum RecordSource {
 /// Customer portal login lifecycle. Self sign-up starts PENDING until staff
 /// approve it and link it to a Customer (phones can't be verified without SMS).
 enum PortalAccountStatus {
+  /// Staff invited an existing customer; waiting for them to set a password.
+  INVITED
   PENDING
   ACTIVE
   REJECTED
@@ -239,6 +241,8 @@ enum PaymentSubmissionStatus {
 
 enum PortalTokenPurpose {
   PASSWORD_RESET
+  /// "Set your password" link in a portal invitation (7 days).
+  INVITE
 }
 
 enum SampleShippingMode {
@@ -358,6 +362,7 @@ model User {
   shippingInvoiced   ShippingOrder[]      @relation("ShippingOrderInvoicedBy")
   shippingEvents     ShippingOrderEvent[]
   portalReviews      PortalAccount[]      @relation("PortalAccountReviewedBy")
+  portalInvites      PortalAccount[]      @relation("PortalAccountInvitedBy")
   portalTokens       PortalToken[]
   paymentReviews     PaymentSubmission[]  @relation("PaymentSubmissionReviewedBy")
   shippingRates      ShippingRate[]
@@ -419,9 +424,9 @@ model ExchangeRate {
 // ───────────────────────── Module 1: Product requests ─────────────────────────
 
 model Customer {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   /// Short code printed on carton labels, e.g. C-00042.
-  code      String   @unique
+  code      String       @unique
   name      String
   phone     String
   email     String?
@@ -429,8 +434,10 @@ model Customer {
   district  String?
   area      String?
   notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  /// STAFF = added by our team; PORTAL = signed up in the customer portal.
+  source    RecordSource @default(STAFF)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
   orders             Order[]
   samples            Sample[]
@@ -1431,6 +1438,9 @@ model PortalAccount {
   reviewedById String?
   reviewedBy   User?               @relation("PortalAccountReviewedBy", fields: [reviewedById], references: [id])
   reviewedAt   DateTime?
+  invitedById  String?
+  invitedBy    User?               @relation("PortalAccountInvitedBy", fields: [invitedById], references: [id])
+  invitedAt    DateTime?
   rejectReason String?
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt

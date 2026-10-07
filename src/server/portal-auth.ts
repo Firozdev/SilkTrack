@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import type { PortalAccountStatus } from "@/generated/prisma/client";
+import type { PortalAccountStatus, PortalTokenPurpose, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { assertCan } from "@/lib/permissions";
 import { UserError } from "@/lib/action";
@@ -39,32 +39,53 @@ function passwordOrThrow(pw: string) {
 
 export type SignUpInput = { name: string; phone: string; email?: string; password: string; address: string; district?: string; area?: string };
 
-/** Self sign-up. The account stays PENDING until staff approve it. */
+/**
+ * Self sign-up. The person lands in the customer database straight away,
+ * tagged as a portal customer, with the login PENDING until staff approve it.
+ * If the phone already belongs to a customer we don't link automatically
+ * (phones can't be verified without SMS) – staff confirm the link on approval.
+ */
 export async function signUp(input: SignUpInput) {
   const phone = phoneOrThrow(input.phone);
   passwordOrThrow(input.password);
   if (!input.name.trim() || !input.address.trim()) throw new UserError("Name and delivery address are required");
   const existing = await prisma.portalAccount.findUnique({ where: { phone } });
+  if (existing?.status === "INVITED") throw new UserError("You already have an invitation. Use the link we sent you on WhatsApp, or contact us for a new one.");
   if (existing && existing.status !== "REJECTED") throw new UserError("An account with this phone number already exists. Log in, or contact us if you forgot the password.");
-  const data = {
-    phone,
-    name: input.name.trim(),
-    email: input.email?.trim() || null,
-    passwordHash: await hashPassword(input.password),
-    address: input.address.trim(),
-    district: input.district?.trim() || null,
-    area: input.area?.trim() || null,
-    status: "PENDING" as const,
-    customerId: null,
-    rejectReason: null,
-    reviewedById: null,
-    reviewedAt: null,
-    failedLogins: 0,
-    lockedUntil: null,
-  };
-  // A rejected phone may sign up again (e.g. after correcting details).
-  const acc = existing ? await prisma.portalAccount.update({ where: { id: existing.id }, data }) : await prisma.portalAccount.create({ data });
-  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_SIGNUP", title: `Portal sign-up: ${acc.name}`, body: `${acc.phone} – review and approve in Portal accounts.` });
+  const matches = await matchingCustomers(phone);
+  const passwordHash = await hashPassword(input.password);
+  const acc = await prisma.$transaction(async (tx) => {
+    let customerId: string | null = null;
+    if (!matches.length) {
+      const c = await findOrCreateCustomer(tx, { name: input.name, phone, email: input.email?.trim() || undefined, address: input.address, district: input.district?.trim() || undefined, area: input.area?.trim() || undefined }, null);
+      await tx.customer.update({ where: { id: c.id }, data: { source: "PORTAL" } });
+      await logChanges(tx, { entityType: "Customer", entityId: c.id, userId: null, action: "CREATE" });
+      customerId = c.id;
+    }
+    const data = {
+      phone,
+      name: input.name.trim(),
+      email: input.email?.trim() || null,
+      passwordHash,
+      address: input.address.trim(),
+      district: input.district?.trim() || null,
+      area: input.area?.trim() || null,
+      status: "PENDING" as const,
+      customerId,
+      rejectReason: null,
+      reviewedById: null,
+      reviewedAt: null,
+      failedLogins: 0,
+      lockedUntil: null,
+    };
+    // A rejected phone may sign up again (e.g. after correcting details).
+    return existing ? tx.portalAccount.update({ where: { id: existing.id }, data }) : tx.portalAccount.create({ data });
+  });
+  await notifyRoles(["CS", "ADMIN"], {
+    type: "PORTAL_SIGNUP",
+    title: `Portal sign-up: ${acc.name}`,
+    body: matches.length ? `${acc.phone} – same phone as ${matches.map((m) => m.code).join(", ")}. Check and approve in Customers.` : `${acc.phone} – approve in Customers.`,
+  });
   return acc;
 }
 
@@ -91,6 +112,7 @@ export async function authenticate(phoneInput: string, password: string, now = n
     return lock ? { ok: false, error: `Too many wrong attempts. Try again after ${LOCK_MINUTES} minutes.` } : generic;
   }
   const blocked: Partial<Record<PortalAccountStatus, string>> = {
+    INVITED: "Use the invitation link we sent you to set your password first.",
     PENDING: "Your account is waiting for approval. We will contact you soon.",
     REJECTED: `Your sign-up was not approved${acc.rejectReason ? `: ${acc.rejectReason}` : ""}. Please contact us.`,
     DISABLED: "This account is disabled. Please contact us.",
@@ -141,9 +163,15 @@ export async function createResetToken(actor: Actor, accountId: string, now = ne
   return token;
 }
 
+export async function tokenValid(token: string, purpose: PortalTokenPurpose = "PASSWORD_RESET", now = new Date()) {
+  const t = await prisma.portalToken.findUnique({ where: { tokenHash: hashToken(token) }, include: { account: { select: { status: true } } } });
+  if (!t || t.usedAt || t.expiresAt <= now || t.purpose !== purpose) return null;
+  return t.purpose === "INVITE" ? (t.account.status === "INVITED" ? t : null) : t.account.status === "ACTIVE" ? t : null;
+}
+
+/** @deprecated use tokenValid */
 export async function resetTokenValid(token: string, now = new Date()) {
-  const t = await prisma.portalToken.findUnique({ where: { tokenHash: hashToken(token) } });
-  return !!t && !t.usedAt && t.expiresAt > now && t.purpose === "PASSWORD_RESET";
+  return !!(await tokenValid(token, "PASSWORD_RESET", now));
 }
 
 /** Set a new password with a reset link; signs out every other session. */
@@ -168,40 +196,63 @@ export function matchingCustomers(phone: string) {
 }
 
 /**
- * Approve a sign-up: link it to `customerId` (an existing customer) or, with
- * "new", create a customer from the sign-up details.
+ * Approve a sign-up. The customer created at sign-up is kept, unless staff
+ * link the login to another (existing) customer instead – then the empty
+ * sign-up customer is removed. Sign-ups whose phone matched an existing
+ * customer must be linked (customerId) or given a new customer ("new").
  */
-export async function approveAccount(actor: Actor, accountId: string, customerId: string | "new") {
+export async function approveAccount(actor: Actor, accountId: string, customerId?: string | "new") {
   assertCan(actor.role, "request:edit");
   const acc = await prisma.portalAccount.findUnique({ where: { id: accountId } });
   if (!acc) throw new UserError("Account not found");
   if (acc.status !== "PENDING") throw new UserError("This sign-up was already reviewed");
   await prisma.$transaction(async (tx) => {
-    let cid: string;
-    if (customerId === "new") {
-      if ((await tx.customer.count({ where: { phone: { in: phoneVariants(acc.phone) } } })) > 0) throw new UserError("A customer with this phone already exists – link the account to that customer");
-      const c = await findOrCreateCustomer(tx, { name: acc.name, phone: acc.phone, email: acc.email ?? undefined, address: acc.address, district: acc.district ?? undefined, area: acc.area ?? undefined }, actor.id);
-      await logChanges(tx, { entityType: "Customer", entityId: c.id, userId: actor.id, action: "CREATE" });
-      cid = c.id;
-    } else {
+    let cid = acc.customerId;
+    if (customerId && customerId !== "new" && customerId !== acc.customerId) {
       const c = await tx.customer.findUnique({ where: { id: customerId } });
       if (!c) throw new UserError("Customer not found");
+      cid = c.id;
+    } else if (!cid) {
+      if (customerId !== "new") throw new UserError("Choose which customer this login belongs to");
+      if ((await tx.customer.count({ where: { phone: { in: phoneVariants(acc.phone) } } })) > 0) throw new UserError("A customer with this phone already exists – link the account to that customer");
+      const c = await findOrCreateCustomer(tx, { name: acc.name, phone: acc.phone, email: acc.email ?? undefined, address: acc.address, district: acc.district ?? undefined, area: acc.area ?? undefined }, actor.id);
+      await tx.customer.update({ where: { id: c.id }, data: { source: "PORTAL" } });
+      await logChanges(tx, { entityType: "Customer", entityId: c.id, userId: actor.id, action: "CREATE" });
       cid = c.id;
     }
     await tx.portalAccount.update({ where: { id: accountId }, data: { status: "ACTIVE", customerId: cid, reviewedById: actor.id, reviewedAt: new Date() } });
     await logChanges(tx, { entityType: "PortalAccount", entityId: accountId, userId: actor.id, action: "UPDATE", changes: [{ field: "status", oldValue: "PENDING", newValue: "ACTIVE" }] });
+    if (acc.customerId && acc.customerId !== cid) await removeIfEmptySignupCustomer(tx, acc.customerId);
   });
 }
 
+/** Delete a customer created by a portal sign-up if nothing was ever recorded for it. */
+async function removeIfEmptySignupCustomer(tx: Prisma.TransactionClient, customerId: string) {
+  const c = await tx.customer.findUnique({
+    where: { id: customerId },
+    include: { _count: { select: { orders: true, samples: true, shippingOrders: true, paymentSubmissions: true, notifications: true, portalAccounts: true } } },
+  });
+  if (!c || c.source !== "PORTAL") return false;
+  if (Object.values(c._count).some((n) => n > 0)) return false;
+  await tx.customer.delete({ where: { id: customerId } });
+  await logChanges(tx, { entityType: "Customer", entityId: customerId, userId: null, action: "DELETE" });
+  return true;
+}
+
+/** Reject a sign-up; a customer it created is removed if it has nothing recorded. */
 export async function rejectAccount(actor: Actor, accountId: string, reason: string) {
   assertCan(actor.role, "request:edit");
   const acc = await prisma.portalAccount.findUnique({ where: { id: accountId } });
   if (!acc) throw new UserError("Account not found");
   if (acc.status !== "PENDING") throw new UserError("This sign-up was already reviewed");
-  await prisma.$transaction([
-    prisma.portalAccount.update({ where: { id: accountId }, data: { status: "REJECTED", rejectReason: reason, reviewedById: actor.id, reviewedAt: new Date() } }),
-    prisma.auditLog.create({ data: { entityType: "PortalAccount", entityId: accountId, userId: actor.id, action: "UPDATE", field: "status", oldValue: "PENDING", newValue: "REJECTED" } }),
-  ]);
+  await prisma.$transaction(async (tx) => {
+    await tx.portalAccount.update({ where: { id: accountId }, data: { status: "REJECTED", rejectReason: reason, reviewedById: actor.id, reviewedAt: new Date(), customerId: null } });
+    await tx.auditLog.create({ data: { entityType: "PortalAccount", entityId: accountId, userId: actor.id, action: "UPDATE", field: "status", oldValue: "PENDING", newValue: "REJECTED" } });
+    if (acc.customerId && !(await removeIfEmptySignupCustomer(tx, acc.customerId))) {
+      // Keep the link if the customer has history (e.g. staff already used it).
+      await tx.portalAccount.update({ where: { id: accountId }, data: { customerId: acc.customerId } });
+    }
+  });
 }
 
 /** Disable (logs out everywhere at once) or re-enable an approved account. */
@@ -241,4 +292,67 @@ export function listPortalAccounts(status?: PortalAccountStatus) {
       customer: { select: { id: true, code: true, name: true } },
     },
   });
+}
+
+// ───────────────────────── Invitations (existing customers) ─────────────────────────
+
+export const INVITE_DAYS = 7;
+
+/**
+ * Staff invite an existing customer to the portal: a login on the customer's
+ * phone, waiting for a password, and a one-time "set your password" link
+ * (returned raw – send it by WhatsApp). Calling it again re-sends: the old
+ * link stops working.
+ */
+export async function inviteCustomer(actor: Actor, customerId: string, now = new Date()) {
+  assertCan(actor.role, "request:edit");
+  const c = await prisma.customer.findUnique({ where: { id: customerId }, include: { portalAccounts: true } });
+  if (!c) throw new UserError("Customer not found");
+  const phone = normalizeBdPhone(c.phone);
+  if (!phone) throw new UserError("The customer's phone is not a valid Bangladesh mobile number – correct it first");
+  const other = c.portalAccounts.find((a) => a.phone !== phone && ["ACTIVE", "INVITED", "PENDING"].includes(a.status));
+  if (other) throw new UserError(`This customer already has a portal login on ${other.phone}`);
+  let acc = await prisma.portalAccount.findUnique({ where: { phone } });
+  if (acc && acc.customerId && acc.customerId !== c.id && acc.status !== "REJECTED") throw new UserError("This phone number is used by another customer's portal login");
+  if (acc?.status === "ACTIVE") throw new UserError("This customer already uses the portal");
+  if (acc?.status === "PENDING") throw new UserError("This customer has a sign-up waiting – approve it instead");
+  if (acc?.status === "DISABLED") throw new UserError("This customer's portal login is disabled – enable it instead");
+  const { token, tokenHash } = newToken();
+  await prisma.$transaction(async (tx) => {
+    const data = {
+      name: c.name,
+      email: c.email,
+      address: c.address,
+      district: c.district,
+      area: c.area,
+      customerId: c.id,
+      status: "INVITED" as const,
+      invitedById: actor.id,
+      invitedAt: now,
+      rejectReason: null,
+      failedLogins: 0,
+      lockedUntil: null,
+    };
+    acc = acc
+      ? await tx.portalAccount.update({ where: { id: acc.id }, data })
+      : await tx.portalAccount.create({ data: { ...data, phone, passwordHash: await hashPassword(randomBytes(24).toString("hex")) } });
+    await tx.portalToken.updateMany({ where: { accountId: acc.id, purpose: "INVITE", usedAt: null }, data: { usedAt: now } });
+    await tx.portalToken.create({ data: { tokenHash, accountId: acc.id, purpose: "INVITE", expiresAt: new Date(now.getTime() + INVITE_DAYS * 86_400_000), createdById: actor.id } });
+    await tx.auditLog.create({ data: { entityType: "PortalAccount", entityId: acc.id, userId: actor.id, action: "UPDATE", field: "status", newValue: "INVITED" } });
+  });
+  return { token, phone, name: c.name };
+}
+
+/** The customer opens the invitation link and chooses a password; the login becomes active. */
+export async function acceptInvite(token: string, password: string, now = new Date()) {
+  passwordOrThrow(password);
+  const t = await tokenValid(token, "INVITE", now);
+  if (!t) throw new UserError("This invitation link has expired or was already used. Ask us for a new one.");
+  const passwordHash = await hashPassword(password);
+  await prisma.$transaction([
+    prisma.portalToken.update({ where: { id: t.id }, data: { usedAt: now } }),
+    prisma.portalAccount.update({ where: { id: t.accountId }, data: { passwordHash, status: "ACTIVE", reviewedAt: now, failedLogins: 0, lockedUntil: null } }),
+    prisma.auditLog.create({ data: { entityType: "PortalAccount", entityId: t.accountId, userId: null, action: "UPDATE", field: "status", oldValue: "INVITED", newValue: "ACTIVE" } }),
+  ]);
+  return t.accountId;
 }

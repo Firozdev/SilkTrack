@@ -6,6 +6,7 @@ import { docNo, fmtBdt, humanize } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/session";
 import { customerLedger } from "@/server/ledger";
+import { PortalPanel } from "./portal-panel";
 
 export default async function CustomerPage({ params }: PageProps<"/customers/[id]">) {
   const user = await requirePagePermission("request:edit");
@@ -16,7 +17,6 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
       orders: { orderBy: { requestedAt: "desc" }, include: { _count: { select: { lines: true } } } },
       samples: { orderBy: { requestedAt: "desc" }, include: { lines: true, order: { select: { number: true } } } },
       shippingOrders: { orderBy: { createdAt: "desc" }, include: { items: true } },
-      portalAccounts: { select: { id: true, phone: true, status: true, lastLoginAt: true } },
     },
   });
   if (!c) notFound();
@@ -47,20 +47,11 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
               ["Email", c.email],
               ["Address", c.address],
               ["District / area", [c.district, c.area].filter(Boolean).join(" / ")],
-              [
-                "Portal",
-                c.portalAccounts.length ? (
-                  <A key="p" href="/portal-accounts">
-                    {c.portalAccounts.map((p) => `${p.phone} · ${humanize(p.status)}${p.lastLoginAt ? ` · last login ${fmtDateTime(p.lastLoginAt, user.timezone)}` : ""}`).join("; ")}
-                  </A>
-                ) : (
-                  "No account (customer can sign up at /portal/signup)"
-                ),
-              ],
             ]}
           />
         </Card>
-        <Card title="Ledger" className="lg:col-span-2">
+        <PortalPanel customer={c} tz={user.timezone} />
+        <Card title="Ledger">
           <Dl
             items={[
               ["Invoiced", fmtBdt(ledger.invoiced)],

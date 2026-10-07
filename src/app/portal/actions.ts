@@ -13,7 +13,7 @@ import { splitLinks } from "@/lib/links";
 import { prisma } from "@/lib/prisma";
 import { saveAttachments } from "@/lib/uploads";
 import { endPortalSession, getPortalAccount, requirePortalAccount, startPortalSession } from "@/lib/portal-session";
-import { authenticate, resetPassword, signUp } from "@/server/portal-auth";
+import { acceptInvite, authenticate, resetPassword, signUp } from "@/server/portal-auth";
 import { decidePortalQuotation } from "@/server/estimates";
 import { cancelPortalRequest, createPortalRequest, updatePortalRequest } from "@/server/requests";
 import { cancelPortalShippingOrder, createPortalShippingOrder, updatePortalShippingOrder, updatePortalShippingTracking } from "@/server/shipping-orders";
@@ -247,4 +247,13 @@ export const portalCancelAction = portalAction(async (fd, t) => {
   revalidateTarget(f.kind, f.id);
   revalidatePath("/portal");
   return { ok: true, message: t.cancelledMsg };
+});
+
+/** The invited customer sets a password and is signed in. */
+export const portalAcceptInviteAction = portalAction(async (fd, t) => {
+  const f = z.object({ token: z.string().min(1), password: z.string(), confirm: z.string() }).parse(fields(fd));
+  if (f.password !== f.confirm) return { error: t.pwMismatch };
+  const accountId = await acceptInvite(f.token, f.password);
+  await startPortalSession(accountId);
+  redirect("/portal");
 });

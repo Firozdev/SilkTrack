@@ -211,6 +211,10 @@ const en = {
   ratesInfo: "Current shipping rates: {rates}",
   perKg: "/kg",
   perCbm: "/CBM",
+  // Invitation
+  inviteTitle: "Welcome, {name}!",
+  inviteIntro: "Choose a password to see your orders, shipments and bills online. Next time, log in with your mobile number {phone}.",
+  inviteExpired: "This invitation link has expired or was already used. Message us on WhatsApp for a new one.",
 };
 
 export type Dict = typeof en;
@@ -411,6 +415,9 @@ const bn: Dict = {
   ratesInfo: "বর্তমান শিপিং রেট: {rates}",
   perKg: "/কেজি",
   perCbm: "/CBM",
+  inviteTitle: "স্বাগতম, {name}!",
+  inviteIntro: "অনলাইনে আপনার অর্ডার, শিপমেন্ট ও বিল দেখতে একটি পাসওয়ার্ড দিন। পরের বার আপনার মোবাইল নম্বর {phone} দিয়ে লগ ইন করবেন।",
+  inviteExpired: "এই আমন্ত্রণ লিংকের মেয়াদ শেষ অথবা আগেই ব্যবহার হয়েছে। নতুন লিংকের জন্য WhatsApp-এ মেসেজ দিন।",
 };
 
 export const DICTS: Record<Lang, Dict> = { en, bn };
@@ -446,6 +453,9 @@ const ERRORS_BN: [RegExp, string][] = [
   [/^Tell us what is wrong/, "সমস্যাটি কী, লিখে জানান"],
   [/^You can confirm once/, "ডেলিভারির পথে থাকলে বা ডেলিভারি হলে তবেই নিশ্চিত করা যাবে"],
   [/can't be changed any more/, "এটি এখন আর বদলানো যাবে না – আমাদের মেসেজ দিন, আমরা সাহায্য করব"],
+  [/^Use the invitation link we sent you/, "প্রথমে আমাদের পাঠানো আমন্ত্রণ লিংক থেকে পাসওয়ার্ড সেট করুন।"],
+  [/^You already have an invitation/, "আপনাকে আগেই আমন্ত্রণ পাঠানো হয়েছে। WhatsApp-এ পাঠানো লিংকটি ব্যবহার করুন, বা নতুন লিংকের জন্য যোগাযোগ করুন।"],
+  [/^This invitation link has expired/, "এই আমন্ত্রণ লিংকের মেয়াদ শেষ বা আগেই ব্যবহার হয়েছে। নতুন লিংকের জন্য আমাদের জানান।"],
   [/^Something went wrong/, "কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করুন।"],
   [/not found$/i, "পাওয়া যায়নি"],
 ];

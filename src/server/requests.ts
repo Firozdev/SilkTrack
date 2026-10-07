@@ -69,7 +69,7 @@ export async function findDuplicateLinks(urls: string[], excludeOrderId?: string
   });
 }
 
-export async function findOrCreateCustomer(tx: Prisma.TransactionClient, c: CustomerInput, actorId: string) {
+export async function findOrCreateCustomer(tx: Prisma.TransactionClient, c: CustomerInput, actorId: string | null) {
   const { id, ...fields } = c;
   const phone = fields.phone.replace(/[^\d+]/g, "");
   const data = {
