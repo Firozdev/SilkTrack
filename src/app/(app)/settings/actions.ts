@@ -3,20 +3,41 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { formAction } from "@/lib/action";
-import { fields } from "@/lib/forms";
+import { fields, zStrOpt } from "@/lib/forms";
 import { requirePermission } from "@/lib/session";
 import { saveSettings } from "@/server/settings";
+import { addShippingRate, deleteUpcomingRate } from "@/server/shipping-rates";
 
-const opt = z.string().trim();
-
-export const saveRatesAction = formAction(async (fd) => {
+export const addRateAction = formAction(async (fd) => {
   const user = await requirePermission("settings:manage");
   const f = z
-    .object({ shipping_service_air_per_kg_bdt: opt, shipping_service_sea_per_cbm_bdt: opt, shipping_service_qa_fee_bdt: opt, default_local_delivery_bdt: z.string().trim().min(1, "Home delivery charge is required") })
+    .object({
+      airPerKgBdt: zStrOpt,
+      seaPerCbmBdt: zStrOpt,
+      qaFeeBdt: zStrOpt,
+      localDeliveryBdt: zStrOpt,
+      when: z.enum(["now", "later"]),
+      // <input type="datetime-local"> in Bangladesh time (UTC+6)
+      startsAt: zStrOpt,
+      note: zStrOpt,
+    })
     .parse(fields(fd));
-  await saveSettings(user, f);
+  let startsAt: Date | null = null;
+  if (f.when === "later") {
+    if (!f.startsAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(f.startsAt)) return { error: "Choose the date and time the new rate starts" };
+    startsAt = new Date(`${f.startsAt}:00+06:00`);
+  }
+  await addShippingRate(user, { ...f, startsAt });
   revalidatePath("/settings");
-  return { ok: true, message: "Shipping rates saved. Customers see the new estimate right away." };
+  return { ok: true, message: startsAt ? "Rate scheduled. It goes live automatically at the start time." : "New rate is live now. Earlier orders keep the rate they were placed with." };
+});
+
+export const deleteRateAction = formAction(async (fd) => {
+  const user = await requirePermission("settings:manage");
+  const { id } = z.object({ id: z.string().min(1) }).parse(fields(fd));
+  await deleteUpcomingRate(user, id);
+  revalidatePath("/settings");
+  return { ok: true, message: "Upcoming rate deleted." };
 });
 
 export const saveOrderRulesAction = formAction(async (fd) => {

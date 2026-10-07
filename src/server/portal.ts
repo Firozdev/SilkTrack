@@ -133,6 +133,7 @@ export async function portalShippingOrder(customerId: string, id: string) {
       status: true,
       shippingMethod: true,
       qaRequested: true,
+      shippingRateId: true,
       qaResult: true,
       qaNotes: true,
       customerNotes: true,

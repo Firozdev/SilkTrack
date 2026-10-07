@@ -2,7 +2,7 @@ import { requirePortalAccount } from "@/lib/portal-session";
 import { fill } from "../../../i18n";
 import { getDict } from "../../../lang";
 import { PortalShippingForm } from "./shipping-form";
-import { rateCard } from "@/server/settings";
+import { rateCard } from "@/server/shipping-rates";
 
 export default async function PortalNewShippingPage() {
   const acc = await requirePortalAccount();

@@ -7,9 +7,9 @@ import { D, cbmOf, money, sum } from "@/lib/money";
 import { docNo } from "@/lib/format";
 import { diffFields, logChanges } from "@/lib/audit";
 import { notifyRoles, queueCustomerMessage } from "@/lib/notify";
-import { getSetting } from "@/lib/settings";
 import { portalShippingEditable } from "@/lib/editability";
 import { rateForConversion } from "./rates";
+import { liveRate, rateCardFor } from "./shipping-rates";
 import { capacityWarning, isAccepting, recalcTotals, suggestShipment } from "./shipments";
 import { findOrCreateCustomer, type CustomerInput } from "./requests";
 import type { Actor } from "./actor";
@@ -73,6 +73,7 @@ async function insertShippingOrder(input: ShippingOrderInput, by: { actorId: str
   const actorId = by.source === "STAFF" ? by.actorId : null;
   const items = input.items.filter((i) => i.productName.trim() && i.quantity > 0);
   if (!items.length) throw new UserError("Add at least one product with a quantity");
+  const rate = await liveRate();
   const s = await prisma.$transaction(async (tx) => {
     const customerId = by.source === "PORTAL" ? by.customerId : (await findOrCreateCustomer(tx, input.customer, by.actorId)).id;
     const s = await tx.shippingOrder.create({
@@ -82,6 +83,7 @@ async function insertShippingOrder(input: ShippingOrderInput, by: { actorId: str
         createdById: actorId,
         shippingMethod: input.shippingMethod,
         qaRequested: input.qaRequested,
+        shippingRateId: rate?.id ?? null,
         declaredWeightKg: input.declaredWeightKg,
         declaredCbm: input.declaredCbm,
         customerNotes: input.customerNotes,
@@ -251,17 +253,21 @@ export async function receiveShippingBd(actor: Actor, id: string) {
   await queueCustomerMessage(s.customerId, "WHATSAPP", { type: "SHIPPING_ARRIVED", title: "Arrived in Bangladesh", body: `Your shipment ${shippingNo(s)} has arrived in Bangladesh. We will send the bill shortly.` });
 }
 
-/** Default BDT shipping rates: the Admin setting, else the rate on the last invoice of that method. */
-export async function defaultShippingRates() {
-  const [air, sea, qa] = await Promise.all([getSetting("shipping_service_air_per_kg_bdt"), getSetting("shipping_service_sea_per_cbm_bdt"), getSetting("shipping_service_qa_fee_bdt")]);
-  const last = async (method: ShippingMethod) =>
+/**
+ * Invoice prefill: the rate card locked on the order when it was placed (what
+ * the customer was shown), else the live one; blank rates fall back to the
+ * rate on the last invoice of that method.
+ */
+export async function defaultShippingRates(shippingRateId?: string | null) {
+  const card = await rateCardFor(shippingRateId);
+  const last = (method: ShippingMethod) =>
     prisma.shippingOrder.findFirst({ where: { shippingMethod: method, invoicedAt: { not: null } }, orderBy: { invoicedAt: "desc" }, select: { shipRatePerKgBdt: true, shipRatePerCbmBdt: true } });
-  const [lastAir, lastSea] = await Promise.all([air ? null : last("AIR"), sea ? null : last("SEA")]);
+  const [lastAir, lastSea] = await Promise.all([card.airPerKgBdt ? null : last("AIR"), card.seaPerCbmBdt ? null : last("SEA")]);
   return {
-    perKgBdt: air || lastAir?.shipRatePerKgBdt?.toString() || "",
-    perCbmBdt: sea || lastSea?.shipRatePerCbmBdt?.toString() || "",
-    qaFeeBdt: qa,
-    localDeliveryBdt: await getSetting("default_local_delivery_bdt"),
+    perKgBdt: card.airPerKgBdt || lastAir?.shipRatePerKgBdt?.toString() || "",
+    perCbmBdt: card.seaPerCbmBdt || lastSea?.shipRatePerCbmBdt?.toString() || "",
+    qaFeeBdt: card.qaFeeBdt,
+    localDeliveryBdt: card.localDeliveryBdt,
   };
 }
 

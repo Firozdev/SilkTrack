@@ -360,6 +360,7 @@ model User {
   portalReviews      PortalAccount[]      @relation("PortalAccountReviewedBy")
   portalTokens       PortalToken[]
   paymentReviews     PaymentSubmission[]  @relation("PaymentSubmissionReviewedBy")
+  shippingRates      ShippingRate[]
   comments           Comment[]
   attachments        Attachment[]
   paymentsReceived   Payment[]
@@ -851,6 +852,27 @@ model SampleEvent {
   @@index([sampleId, occurredAt])
 }
 
+// ───────────────────────── Shipping rate card ─────────────────────────
+
+/// Customer shipping charges (BDT), set by Admin. Never edited once live: a
+/// change is a new record. The live rate is the one with the latest
+/// effectiveFrom ≤ now; later ones are Upcoming, earlier ones Previous.
+model ShippingRate {
+  id               String   @id @default(cuid())
+  airPerKgBdt      Decimal? @db.Decimal(14, 2)
+  seaPerCbmBdt     Decimal? @db.Decimal(14, 2)
+  qaFeeBdt         Decimal? @db.Decimal(14, 2)
+  localDeliveryBdt Decimal? @db.Decimal(14, 2)
+  effectiveFrom    DateTime @unique
+  note             String?
+  createdById      String?
+  createdBy        User?    @relation(fields: [createdById], references: [id])
+  createdAt        DateTime @default(now())
+
+  /// Orders placed while this rate was live (their estimate uses it).
+  shippingOrders ShippingOrder[]
+}
+
 // ───────────────────────── Shipping-only service ─────────────────────────
 
 /// The customer buys from China themselves and has the supplier send the
@@ -870,6 +892,9 @@ model ShippingOrder {
   shippingMethod ShippingMethod      @default(AIR)
   /// Customer asked for a QA test at the China warehouse.
   qaRequested    Boolean             @default(false)
+  /// Rate card live when the order was placed – its estimate and invoice prefill use it.
+  shippingRateId String?
+  shippingRate   ShippingRate?       @relation(fields: [shippingRateId], references: [id])
   customerNotes  String?
 
   // Customer's estimate (from the request), for reference only

@@ -7,7 +7,7 @@ import { portalShippingOrder } from "@/server/portal";
 import { portalShippingUpdateAction } from "../../../../actions";
 import { getDict } from "../../../../lang";
 import { PortalShippingForm } from "../../new/shipping-form";
-import { rateCard } from "@/server/settings";
+import { rateCard } from "@/server/shipping-rates";
 
 export default async function PortalEditShippingPage({ params }: PageProps<"/portal/shipping/[id]/edit">) {
   const acc = await requirePortalAccount();

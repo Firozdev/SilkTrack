@@ -1,4 +1,4 @@
-import { rateCard } from "@/server/settings";
+import { rateCard } from "@/server/shipping-rates";
 import { getDict } from "../../../lang";
 import { portalLabel } from "../../../labels";
 import { ratesLine } from "../../estimate-box";

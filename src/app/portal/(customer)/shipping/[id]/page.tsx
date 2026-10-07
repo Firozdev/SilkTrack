@@ -13,7 +13,7 @@ import { PStatus, Timeline } from "../../../portal-ui";
 import { FilesCard } from "../../upload-box";
 import { EditBar } from "../../edit-bar";
 import { EstimateBox } from "../../estimate-box";
-import { rateCard } from "@/server/settings";
+import { rateCardFor } from "@/server/shipping-rates";
 import { portalShippingEditable } from "@/lib/editability";
 import { PaymentBox, ReceiptBox } from "../../payment-box";
 import { amountDue } from "@/server/payment-submissions";
@@ -24,7 +24,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
   const { id } = await params;
   const s = await portalShippingOrder(acc.customer.id, id);
   if (!s) notFound();
-  const [due, rates] = await Promise.all([amountDue(acc.customer.id, { kind: "shipping", id: s.id }), rateCard()]);
+  const [due, rates] = await Promise.all([amountDue(acc.customer.id, { kind: "shipping", id: s.id }), rateCardFor(s.shippingRateId)]);
   const air = s.shippingMethod === "AIR";
   const money = (label: string, v: { gt(n: number): boolean } | null, text: string): [string, string][] => (v?.gt(0) ? [[label, text]] : []);
   return (

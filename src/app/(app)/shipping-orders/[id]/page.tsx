@@ -15,7 +15,7 @@ import { SendInvoice } from "../../samples/[id]/send-invoice";
 import { Step, Waiting } from "../../samples/[id]/step";
 import { CustomerPanel } from "../../customer-panel";
 import { estimateShipping } from "@/lib/shipping-estimate";
-import { rateCard } from "@/server/settings";
+import { rateCardFor } from "@/server/shipping-rates";
 import {
   assignAction,
   cancelAction,
@@ -77,9 +77,9 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
   const air = s.shippingMethod === "AIR";
   const [shipments, rates] = await Promise.all([
     china && active && ["RECEIVED_CHINA", "QA_DONE", "IN_SHIPMENT"].includes(st) ? acceptingShipments(s.shippingMethod) : Promise.resolve([]),
-    bd && active && ["RECEIVED_BD", "INVOICED"].includes(st) ? defaultShippingRates() : Promise.resolve(null),
+    bd && active && ["RECEIVED_BD", "INVOICED"].includes(st) ? defaultShippingRates(s.shippingRateId) : Promise.resolve(null),
   ]);
-  const est = showMoney && !raw.invoiceTotalBdt ? estimateShipping({ method: s.shippingMethod, weightKg: (s.grossWeightKg ?? s.declaredWeightKg)?.toString(), cbm: (s.cbm ?? s.declaredCbm)?.toString(), qa: s.qaRequested }, await rateCard()) : null;
+  const est = showMoney && !raw.invoiceTotalBdt ? estimateShipping({ method: s.shippingMethod, weightKg: (s.grossWeightKg ?? s.declaredWeightKg)?.toString(), cbm: (s.cbm ?? s.declaredCbm)?.toString(), qa: s.qaRequested }, await rateCardFor(s.shippingRateId)) : null;
   const invoiceText = showMoney && raw.invoiceTotalBdt ? shippingInvoiceMessage(raw, s.customer.name, paid) : "";
   const str = (v: { toString(): string } | null | undefined) => (v === null || v === undefined ? "" : v.toString());
   const qaPhotos = s.attachments.filter((a) => a.kind === "QA_PHOTO");
