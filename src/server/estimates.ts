@@ -10,6 +10,7 @@ import { docNo } from "@/lib/format";
 import { logChanges, diffFields } from "@/lib/audit";
 import { notifyRoles, queueCustomerMessage } from "@/lib/notify";
 import { rateForConversion } from "./rates";
+import { quoteBreakdown } from "./quote-breakdown";
 import { applyCustomerApproval, applyCustomerRejection, markCustomerApproved, markRejected } from "./requests";
 import { setLineStatus } from "./status";
 import type { Actor } from "./actor";
@@ -54,13 +55,18 @@ function assertCanSetSelling(actor: Actor) {
   if (!canSeeSelling(actor)) throw new ForbiddenError("price:viewSelling");
 }
 
-/** Selling totals from the lines: grand total = Σ selling, margin = grand total − total BDT. */
-function sellingTotals(lines: { sellingPriceBdt: Prisma.Decimal | string | null | undefined }[], totalBdt: Prisma.Decimal) {
+/**
+ * Selling totals from the lines. Selling prices are PRODUCT prices (shipping
+ * is charged separately on the lot's weight / CBM), so the margin compares
+ * them with the product cost: products + China costs, without international
+ * shipping. grand total = Σ selling, margin = grand total − product cost BDT.
+ */
+function sellingTotals(lines: { sellingPriceBdt: Prisma.Decimal | string | null | undefined }[], productCostBdt: Prisma.Decimal) {
   if (lines.some((l) => l.sellingPriceBdt === null || l.sellingPriceBdt === undefined || l.sellingPriceBdt === "")) {
     return { grandTotalBdt: null, marginBdt: null };
   }
   const grand = money(sum(lines.map((l) => l.sellingPriceBdt)));
-  return { grandTotalBdt: grand, marginBdt: grand.sub(totalBdt) };
+  return { grandTotalBdt: grand, marginBdt: grand.sub(productCostBdt) };
 }
 
 /**
@@ -123,7 +129,7 @@ export async function saveQuotation(actor: Actor, orderId: string, input: Quotat
     productCostBdt: calc.productCostBdt,
     shippingBdt: calc.shippingBdt,
     totalBdt: calc.totalBdt,
-    ...sellingTotals(lineData, calc.totalBdt),
+    ...sellingTotals(lineData, calc.productCostBdt),
     validUntil: input.validUntil,
     notes: input.notes ?? null,
   };
@@ -183,7 +189,7 @@ export async function setSellingPrices(actor: Actor, id: string, lines: { lineId
       await logChanges(tx, { entityType: "EstimateLine", entityId: l.id, userId: actor.id, action: "UPDATE", changes: [{ field: "sellingPriceBdt", oldValue: l.sellingPriceBdt?.toString() ?? null, newValue: next.toString() }] });
     }
     const fresh = await tx.estimateLine.findMany({ where: { estimateId: id } });
-    const totals = sellingTotals(fresh, e.totalBdt);
+    const totals = sellingTotals(fresh, e.productCostBdt);
     await tx.estimate.update({ where: { id }, data: totals });
     if (isBd && e.status === "SUBMITTED_BY_CHINA") await setStatus(tx, id, e.status, "REVIEWED_BY_BD", actor.id, { reviewedAt: new Date(), reviewedBy: { connect: { id: actor.id } } });
   });
@@ -208,10 +214,13 @@ export async function sendQuotationToCustomer(actor: Actor, id: string) {
     }
     await setLineStatus(tx, e.lines.map((l) => l.orderLineId).filter((x): x is string => !!x), "QUOTED", { actorId: actor.id, message: `Quotation ${docNo("estimate", e.number)} v${e.version} sent to customer`, onlyForward: true });
   });
+  const b = await quoteBreakdown({ ...e, sentAt: new Date() });
   await queueCustomerMessage(e.order.customerId, "WHATSAPP", {
     type: "QUOTE_READY",
     title: "Quotation ready",
-    body: `Your quotation for ${docNo("order", e.order.number)} is ready: ৳${e.grandTotalBdt?.toFixed(2)}. Valid until ${e.validUntil.toISOString().slice(0, 10)}.`,
+    body: `Your quotation for ${docNo("order", e.order.number)} is ready. Products: ৳${b.products.toFixed(2)}${
+      b.shipping ? `; estimated shipping ৳${b.shipping.amount.add(b.delivery).toFixed(2)} (can change with your lot's actual weight/CBM); estimated total ৳${b.estimatedTotal.toFixed(2)}` : "; shipping is charged on your lot's actual weight/CBM"
+    }. Valid until ${e.validUntil.toISOString().slice(0, 10)}.`,
     orderId: e.orderId,
   });
 }

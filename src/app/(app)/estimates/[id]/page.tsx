@@ -7,6 +7,7 @@ import { BD_TZ, fmtDateTime, fmtDay, today } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg, fmtNum, fmtRate, fmtRmb, humanize } from "@/lib/format";
 import { can, canSeeSelling, redactFor } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
+import { quoteBreakdown } from "@/server/quote-breakdown";
 import { getQuotation } from "@/server/estimates";
 import { approveAction, rejectAction, reviseAction, sellingAction, sendAction, submitAction } from "../actions";
 
@@ -23,6 +24,7 @@ export default async function QuotationPage({ params }: PageProps<"/estimates/[i
   const expired = e.validUntil < today(BD_TZ);
   const hid = <input type="hidden" name="id" value={e.id} />;
   const sellingEditable = selling && ["DRAFT", "SUBMITTED_BY_CHINA", "REVIEWED_BY_BD"].includes(e.status);
+  const est = selling && raw.grandTotalBdt ? await quoteBreakdown(raw) : null;
   const revisable = ["SUBMITTED_BY_CHINA", "REVIEWED_BY_BD", "SENT_TO_CUSTOMER"].includes(e.status) && !e.nextVersion && (isChina || isBd);
 
   return (
@@ -86,7 +88,11 @@ export default async function QuotationPage({ params }: PageProps<"/estimates/[i
           </Card>
 
           {sellingEditable && (
-            <Card title="Selling price for the customer (BDT, per line)">
+            <Card title="Selling price for the customer (BDT, per line – products only)">
+              <p className="mb-2 text-xs text-gray-500">
+                Enter the <b>product</b> price for each line. Shipping is not included: the customer sees an estimated shipping from the Admin shipping rate (Settings → Shipping
+                charges) × this quotation&apos;s weight / CBM, and the final shipping is billed on the lot&apos;s actual weight / CBM.
+              </p>
               <ActionForm action={sellingAction} submitLabel="Save selling prices">
                 {hid}
                 {e.lines.map((l, i) => (
@@ -95,10 +101,10 @@ export default async function QuotationPage({ params }: PageProps<"/estimates/[i
                     <div className="text-sm sm:col-span-2">
                       {l.productName} × {l.quantity}
                       <div className="text-xs text-gray-400">
-                        Product cost {fmtRmb(l.lineTotalRmb)} ≈ {fmtBdt(rmbToBdt(l.lineTotalRmb, e.rateUsed))}, before China costs and shipping
+                        Product cost {fmtRmb(l.lineTotalRmb)} ≈ {fmtBdt(rmbToBdt(l.lineTotalRmb, e.rateUsed))}, before China costs
                       </div>
                     </div>
-                    <Field label="Selling ৳ (line total)">
+                    <Field label="Product price ৳ (line total)">
                       <input name={`s.${i}.sellingPriceBdt`} defaultValue={"sellingPriceBdt" in l && l.sellingPriceBdt ? String(l.sellingPriceBdt) : ""} required inputMode="decimal" className={inputCls} />
                     </Field>
                   </div>
@@ -123,8 +129,18 @@ export default async function QuotationPage({ params }: PageProps<"/estimates/[i
                 ["Total order price", <b key="t">{fmtRmb(e.totalRmb)}</b>],
                 ["Rate (locked)", `${fmtRate(e.rateUsed)} · ${fmtDay(e.exchangeRate.effectiveDate)}`],
                 ["Total in BDT", fmtBdt(e.totalBdt)],
-                ...(selling ? ([["Selling total", <b key="g">{fmtBdt(e.grandTotalBdt as never)}</b>]] as [string, React.ReactNode][]) : []),
-                ...(showMargin ? ([["Margin", fmtBdt(e.marginBdt as never)]] as [string, React.ReactNode][]) : []),
+                ...(selling ? ([["Selling total (products)", <b key="g">{fmtBdt(e.grandTotalBdt as never)}</b>]] as [string, React.ReactNode][]) : []),
+                ...(showMargin ? ([["Product margin", fmtBdt(e.marginBdt as never)]] as [string, React.ReactNode][]) : []),
+                ...(selling && est
+                  ? ([
+                      [
+                        "Customer sees",
+                        <span key="c">
+                          {est.shipping ? `+ est. shipping ${fmtBdt(est.shipping.amount.add(est.delivery))} = ≈ ${fmtBdt(est.estimatedTotal)}` : "no shipping estimate (no rate set)"}
+                        </span>,
+                      ],
+                    ] as [string, React.ReactNode][])
+                  : []),
               ]}
             />
             {e.notes && <p className="mt-3 whitespace-pre-wrap rounded bg-gray-50 p-2 text-sm">{e.notes}</p>}

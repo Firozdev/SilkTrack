@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { A, Alert, Attachments, Card, Dl, Table, inputCls, tdCls } from "@/components/ui";
 import { BD_TZ, fmtDateTime, fmtDay, today } from "@/lib/dates";
-import { docNo, fmtBdt } from "@/lib/format";
+import { docNo, fmtBdt, fmtCbm, fmtKg } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
 import { portalOrder } from "@/server/portal";
 import { portalQuoteAction } from "../../../actions";
@@ -39,23 +39,55 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
       {portalRequestEditable({ requestStatus: o.requestStatus, estimateCount: o._count.estimates }) && o.status !== "CANCELLED" && (
         <EditBar t={t} kind="order" id={o.id} editHref={`/portal/requests/${o.id}/edit`} />
       )}
-      {awaiting && !expired && <Alert tone="warn">{fill(t.quoteReady, { total: fmtBdt(q.grandTotalBdt), date: fmtDay(q.validUntil) })}</Alert>}
+      {awaiting && !expired && <Alert tone="warn">{fill(t.quoteReady, { total: fmtBdt(q.breakdown.estimatedTotal), date: fmtDay(q.validUntil) })}</Alert>}
       {awaiting && expired && <Alert tone="info">{t.quoteExpired}</Alert>}
 
       {q && (
         <Card title={`${t.quoteTitle} ${docNo("estimate", q.number)}${q.version > 1 ? ` (v${q.version})` : ""}`} actions={<PStatus lang={lang} value={q.status} />}>
-          <Table head={[t.colProducts, t.qty.replace(" *", ""), t.colPrice]}>
-            {q.lines.map((l) => (
+          <Table head={[t.colProducts, t.qty.replace(" *", ""), t.unitPrice, t.amountCol]}>
+            {q.breakdown.lines.map((l) => (
               <tr key={l.id}>
                 <td className={tdCls}>{l.productName}</td>
                 <td className={tdCls}>{l.quantity}</td>
-                <td className={tdCls}>{fmtBdt(l.sellingPriceBdt)}</td>
+                <td className={`${tdCls} tabular-nums`}>{fmtBdt(l.unitPrice)}</td>
+                <td className={`${tdCls} tabular-nums`}>{fmtBdt(l.amount)}</td>
               </tr>
             ))}
           </Table>
-          <p className="mt-2 text-sm">
-            {t.total} <b>{fmtBdt(q.grandTotalBdt)}</b> · {fill(t.validUntil, { date: fmtDay(q.validUntil) })}
+          <dl className="ml-auto mt-3 max-w-md space-y-1 text-sm">
+            <div className="flex justify-between gap-4 font-medium">
+              <dt>{t.totalPurchase}</dt>
+              <dd className="tabular-nums">{fmtBdt(q.breakdown.products)}</dd>
+            </div>
+            {q.breakdown.shipping ? (
+              <>
+                <div className="flex justify-between gap-4">
+                  <dt>
+                    {fill(t.estShipQuote, {
+                      method: portalLabel(q.shippingMethod, lang),
+                      basis: q.breakdown.shipping.unit === "kg" ? fmtKg(q.breakdown.shipping.basis) : fmtCbm(q.breakdown.shipping.basis),
+                      rate: `${fmtBdt(q.breakdown.shipping.rate)}${q.breakdown.shipping.unit === "kg" ? t.perKg : t.perCbm}`,
+                    })}
+                  </dt>
+                  <dd className="tabular-nums">{fmtBdt(q.breakdown.shipping.amount)}</dd>
+                </div>
+                {q.breakdown.delivery.gt(0) && (
+                  <div className="flex justify-between gap-4">
+                    <dt>{t.estDelivery}</dt>
+                    <dd className="tabular-nums">{fmtBdt(q.breakdown.delivery)}</dd>
+                  </div>
+                )}
+                <div className="flex justify-between gap-4 border-t border-gray-200 pt-1 text-base font-semibold">
+                  <dt>{t.estTotalQuote}</dt>
+                  <dd className="tabular-nums">≈ {fmtBdt(q.breakdown.estimatedTotal)}</dd>
+                </div>
+              </>
+            ) : null}
+          </dl>
+          <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+            ⚠ {q.breakdown.shipping ? t.shipNote : t.shipLater} {t.advanceNote}
           </p>
+          <p className="mt-2 text-xs text-gray-500">{fill(t.validUntil, { date: fmtDay(q.validUntil) })}</p>
           {awaiting && !expired && q.estimateId && (
             <div className="mt-3 flex flex-wrap items-start gap-4 border-t border-gray-100 pt-3">
               <ActionForm action={portalQuoteAction} submitLabel={t.approveQuote} confirm={t.approveConfirm} inline>

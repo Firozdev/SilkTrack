@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import { fmtDay } from "@/lib/dates";
-import { docNo, fmtBdt } from "@/lib/format";
+import { docNo, fmtBdt, fmtCbm, fmtKg } from "@/lib/format";
 import { canSeeSelling } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
 import { getQuotation } from "@/server/estimates";
+import { quoteBreakdown } from "@/server/quote-breakdown";
 import { PrintButton } from "./print-button";
 
 // Customer-facing quotation in BDT. Use the browser's "Save as PDF".
@@ -13,6 +14,7 @@ export default async function CustomerQuote({ params }: PageProps<"/estimates/[i
   const { id } = await params;
   const e = await getQuotation(id);
   if (!e || !e.grandTotalBdt) notFound();
+  const b = await quoteBreakdown(e);
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-sm text-gray-900 print:p-0">
       <div className="no-print mb-6 flex justify-end">
@@ -65,7 +67,7 @@ export default async function CustomerQuote({ params }: PageProps<"/estimates/[i
                 <div className="text-xs text-gray-500">{[l.orderLine?.color, l.orderLine?.size, l.orderLine?.model].filter(Boolean).join(" · ")}</div>
               </td>
               <td className="py-2 text-right">{l.quantity}</td>
-              <td className="py-2 text-right tabular-nums">{l.sellingPriceBdt ? fmtBdt(l.sellingPriceBdt.div(l.quantity).toDecimalPlaces(2)) : "—"}</td>
+              <td className="py-2 text-right tabular-nums">{fmtBdt(b.lines[i].unitPrice)}</td>
               <td className="py-2 text-right tabular-nums">{fmtBdt(l.sellingPriceBdt)}</td>
             </tr>
           ))}
@@ -73,15 +75,46 @@ export default async function CustomerQuote({ params }: PageProps<"/estimates/[i
         <tfoot>
           <tr>
             <td colSpan={4} className="pt-3 text-right font-semibold">
-              Total (incl. purchase, China costs and shipping to Bangladesh)
+              Total purchase price (products, incl. China costs)
             </td>
-            <td className="pt-3 text-right text-base font-bold tabular-nums">{fmtBdt(e.grandTotalBdt)}</td>
+            <td className="pt-3 text-right font-semibold tabular-nums">{fmtBdt(b.products)}</td>
           </tr>
+          {b.shipping && (
+            <>
+              <tr>
+                <td colSpan={4} className="pt-1 text-right">
+                  Estimated shipping to Bangladesh ({e.shippingMethod === "AIR" ? "air" : "sea"}: {b.shipping.unit === "kg" ? fmtKg(b.shipping.basis) : fmtCbm(b.shipping.basis)} × {fmtBdt(b.shipping.rate)}/
+                  {b.shipping.unit})
+                </td>
+                <td className="pt-1 text-right tabular-nums">{fmtBdt(b.shipping.amount)}</td>
+              </tr>
+              {b.delivery.gt(0) && (
+                <tr>
+                  <td colSpan={4} className="pt-1 text-right">
+                    Home delivery
+                  </td>
+                  <td className="pt-1 text-right tabular-nums">{fmtBdt(b.delivery)}</td>
+                </tr>
+              )}
+              <tr className="border-t border-gray-300">
+                <td colSpan={4} className="pt-2 text-right font-semibold">
+                  Estimated total
+                </td>
+                <td className="pt-2 text-right text-base font-bold tabular-nums">≈ {fmtBdt(b.estimatedTotal)}</td>
+              </tr>
+            </>
+          )}
         </tfoot>
       </table>
-      <p className="mt-8 text-xs text-gray-500">
-        Prices in Bangladeshi Taka. An upfront payment is required before purchase. Final bill is confirmed on arrival in Bangladesh; local delivery charged separately. This quotation expires on{" "}
-        {fmtDay(e.validUntil)}.
+      <p className="mt-6 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+        ⚠{" "}
+        {b.shipping
+          ? "Shipping is an estimate from the expected weight / CBM. It can change depending on your lot – the actual weight and size when it reaches our China warehouse."
+          : "Shipping is added later, based on the actual weight / CBM of your lot."}{" "}
+        The final shipping is billed when your goods arrive in Bangladesh.
+      </p>
+      <p className="mt-4 text-xs text-gray-500">
+        Prices in Bangladeshi Taka. An upfront payment for the products is required before purchase. This quotation expires on {fmtDay(e.validUntil)}.
       </p>
     </div>
   );

@@ -3,6 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { D, sum, type Decimal } from "@/lib/money";
 import { customerLedger } from "./ledger";
+import { quoteBreakdown } from "./quote-breakdown";
 
 /**
  * Customer portal reads. Every query is scoped to the signed-in customer and
@@ -106,7 +107,19 @@ export async function portalOrder(customerId: string, orderId: string) {
         where: { status: { in: ["SENT_TO_CUSTOMER", "APPROVED"] } },
         orderBy: { version: "desc" },
         take: 1,
-        select: { id: true, number: true, version: true, status: true, validUntil: true, sentAt: true, grandTotalBdt: true, lines: { select: { id: true, productName: true, quantity: true, sellingPriceBdt: true } } },
+        select: {
+          id: true,
+          number: true,
+          version: true,
+          status: true,
+          validUntil: true,
+          sentAt: true,
+          grandTotalBdt: true,
+          shippingMethod: true,
+          grossWeightKg: true,
+          cbm: true,
+          lines: { select: { id: true, productName: true, quantity: true, sellingPriceBdt: true } },
+        },
       },
       invoices: {
         where: { status: { in: ["ISSUED", "PARTIALLY_PAID", "PAID"] } },
@@ -121,7 +134,7 @@ export async function portalOrder(customerId: string, orderId: string) {
   });
   if (!o) return null;
   const e = o.estimates[0];
-  return { ...o, paid: paidOf(o.payments), quote: e ? { ...e, estimateId: e.id } : null };
+  return { ...o, paid: paidOf(o.payments), quote: e ? { ...e, estimateId: e.id, breakdown: await quoteBreakdown(e) } : null };
 }
 
 export async function portalShippingOrder(customerId: string, id: string) {
