@@ -3,7 +3,7 @@ import type { EstimateStatus, Prisma, ShippingMethod } from "@/generated/prisma/
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, assertCan, canSeeSelling } from "@/lib/permissions";
 import { UserError } from "@/lib/action";
-import { money, sum } from "@/lib/money";
+import { D, money, sum } from "@/lib/money";
 import { calcQuotation } from "@/lib/quotation";
 import { BD_TZ, today } from "@/lib/dates";
 import { docNo } from "@/lib/format";
@@ -193,6 +193,20 @@ export async function setSellingPrices(actor: Actor, id: string, lines: { lineId
     await tx.estimate.update({ where: { id }, data: totals });
     if (isBd && e.status === "SUBMITTED_BY_CHINA") await setStatus(tx, id, e.status, "REVIEWED_BY_BD", actor.id, { reviewedAt: new Date(), reviewedBy: { connect: { id: actor.id } } });
   });
+}
+
+/**
+ * CS enters selling prices PER UNIT; they are stored as line totals
+ * (unit × the line's quantity, taken from the database).
+ */
+export async function setUnitSellingPrices(actor: Actor, id: string, lines: { lineId: string; unitPriceBdt: string }[]) {
+  const qty = new Map((await prisma.estimateLine.findMany({ where: { estimateId: id }, select: { id: true, quantity: true } })).map((l) => [l.id, l.quantity]));
+  if (lines.some((l) => !qty.has(l.lineId))) throw new UserError("Unknown product line");
+  return setSellingPrices(
+    actor,
+    id,
+    lines.map((l) => ({ lineId: l.lineId, sellingPriceBdt: money(D(l.unitPriceBdt).mul(qty.get(l.lineId)!)).toString() })),
+  );
 }
 
 /** BD sends the quotation to the customer: prices copied to the order, request becomes Quoted. */

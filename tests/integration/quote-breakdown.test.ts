@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { BD_TZ, toYmd, today } from "@/lib/dates";
 import { createRequest, sendToChina } from "@/server/requests";
-import { saveQuotation, sendQuotationToCustomer, setSellingPrices, submitQuotation } from "@/server/estimates";
+import { saveQuotation, sendQuotationToCustomer, setSellingPrices, setUnitSellingPrices, submitQuotation } from "@/server/estimates";
 import { addShippingRate } from "@/server/shipping-rates";
 import { portalOrder } from "@/server/portal";
 import type { Actor } from "@/server/actor";
@@ -81,6 +81,21 @@ describe("Customer quotation breakdown", () => {
     await prisma.shippingRate.deleteMany();
     const b2 = (await portalOrder(sea.customerId, sea.id))!.quote!.breakdown;
     expect([b2.shipping, b2.products.toString(), b2.estimatedTotal.toString()]).toEqual([null, "5700", "5700"]);
+  });
+
+  it("CS enters the price per unit: 1500 × 3 pieces shows unit 1500 and amount 4500", async () => {
+    const { order } = await createRequest(cs, { customer: { name: "U", phone: "01600000000", address: "x" }, shippingMethod: "AIR", lines: [{ productName: "Bag", quantity: 3, links: [] }] });
+    await sendToChina(cs, order.id);
+    const e = await saveQuotation(china, order.id, { shippingMethod: "AIR", shippingRatePerKgRmb: "40", validUntil: new Date("2099-01-01T00:00:00Z"), lines: [{ orderLineId: order.lines[0].id, unitPriceRmb: "50" }] });
+    await submitQuotation(china, e.id);
+    const [line] = await prisma.estimateLine.findMany({ where: { estimateId: e.id } });
+    await expect(setUnitSellingPrices(cs, e.id, [{ lineId: "nope", unitPriceBdt: "1" }])).rejects.toThrow(/Unknown product line/);
+    await setUnitSellingPrices(cs, e.id, [{ lineId: line.id, unitPriceBdt: "1500" }]);
+    expect((await prisma.estimateLine.findUniqueOrThrow({ where: { id: line.id } })).sellingPriceBdt?.toString()).toBe("4500");
+    expect((await prisma.estimate.findUniqueOrThrow({ where: { id: e.id } })).grandTotalBdt?.toString()).toBe("4500");
+    await sendQuotationToCustomer(cs, e.id);
+    const b = (await portalOrder(order.customerId, order.id))!.quote!.breakdown;
+    expect([b.lines[0].unitPrice?.toString(), b.lines[0].amount?.toString(), b.products.toString()]).toEqual(["1500", "4500", "4500"]);
   });
 
   it("customer-facing data still never includes RMB cost, rate or margin", async () => {
