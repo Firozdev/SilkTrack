@@ -3,6 +3,17 @@
 #   "silktrack.example.com"  → automatic HTTPS once the domain points here
 {$SITE_ADDRESS} {
 	encode gzip
+	header {
+		# Browsers use HTTPS only for the next year (ignored on plain HTTP)
+		Strict-Transport-Security "max-age=31536000"
+		# No embedding SilkTrack inside other sites (clickjacking)
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		-Server
+	}
 	request_body {
 		max_size 30MB
 	}

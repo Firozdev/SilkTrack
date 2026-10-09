@@ -1,6 +1,6 @@
 "use server";
 
-import { AuthError } from "next-auth";
+import { AuthError, CredentialsSignin } from "next-auth";
 import { signIn } from "@/auth";
 
 export type LoginState = { error?: string };
@@ -21,6 +21,9 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
     return {};
   } catch (error) {
     // signIn throws a redirect on success; let Next handle it.
+    if (error instanceof CredentialsSignin && error.code === "locked") {
+      return { error: "Too many failed attempts. Please wait 15 minutes and try again." };
+    }
     if (error instanceof AuthError) {
       return { error: "Wrong email or password, or the account is disabled." };
     }
