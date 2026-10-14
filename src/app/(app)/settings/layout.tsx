@@ -4,7 +4,7 @@ import { can } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
 import { SettingsTabs } from "./settings-tabs";
 
-/** Settings section: exchange rates (everyone can view), shipping charges and general rules (Admin). */
+/** Settings section: exchange rates (everyone can view); shipping charges, organization, payment information and general rules (Admin). */
 export default async function SettingsLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
   const admin = can(user.role, "settings:manage");
@@ -13,6 +13,8 @@ export default async function SettingsLayout({ children }: { children: ReactNode
     ...(admin
       ? [
           { href: "/settings/shipping-charges", label: "Shipping charges" },
+          { href: "/settings/organization", label: "Organization" },
+          { href: "/settings/payment-accounts", label: "Payment information" },
           { href: "/settings", label: "General" },
         ]
       : []),

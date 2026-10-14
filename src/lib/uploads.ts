@@ -51,3 +51,31 @@ export async function saveLineFiles(files: File[], uploader: string | { accountI
   if (images.length) await saveAttachments(images, "PRODUCT_IMAGE", uploader, owner);
   if (others.length) await saveAttachments(others, "OTHER", uploader, owner);
 }
+
+export const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+export type StoredLogo = { key: string; mime: "image/png" | "image/jpeg" | "image/svg+xml"; fileName: string };
+
+/**
+ * Organization logo: PNG, JPG or SVG up to 2 MB, checked by the file's actual
+ * content (not its name). SVGs with scripts or event handlers are refused; the
+ * logo route also serves SVG with a sandboxing Content-Security-Policy.
+ */
+export async function saveLogo(f: File): Promise<StoredLogo> {
+  if (f.size === 0) throw new UserError("Choose a logo file");
+  if (f.size > LOGO_MAX_BYTES) throw new UserError("The logo must be 2 MB or smaller");
+  const buf = Buffer.from(await f.arrayBuffer());
+  let mime: StoredLogo["mime"];
+  let ext: string;
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) [mime, ext] = ["image/png", ".png"];
+  else if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) [mime, ext] = ["image/jpeg", ".jpg"];
+  else {
+    const text = buf.toString("utf8");
+    if (!/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text)) throw new UserError("The logo must be a PNG, JPG or SVG image");
+    if (/<script|javascript:|\son[a-z]+\s*=|<foreignObject/i.test(text)) throw new UserError("This SVG contains scripts and can't be used as a logo");
+    [mime, ext] = ["image/svg+xml", ".svg"];
+  }
+  await mkdir(UPLOAD_DIR, { recursive: true });
+  const key = `logo-${randomUUID()}${ext}`;
+  await writeFile(path.join(UPLOAD_DIR, key), buf);
+  return { key, mime, fileName: f.name };
+}

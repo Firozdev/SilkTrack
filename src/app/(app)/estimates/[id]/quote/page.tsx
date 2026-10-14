@@ -5,6 +5,8 @@ import { canSeeSelling } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
 import { getQuotation } from "@/server/estimates";
 import { quoteBreakdown } from "@/server/quote-breakdown";
+import { getDocumentBranding } from "@/server/organization";
+import { DocumentHeader, PaymentDetails } from "@/components/document-branding";
 import { PrintButton } from "./print-button";
 
 // Customer-facing quotation in BDT. Use the browser's "Save as PDF".
@@ -14,25 +16,19 @@ export default async function CustomerQuote({ params }: PageProps<"/estimates/[i
   const { id } = await params;
   const e = await getQuotation(id);
   if (!e || !e.grandTotalBdt) notFound();
-  const b = await quoteBreakdown(e);
+  const [b, branding] = await Promise.all([quoteBreakdown(e), getDocumentBranding()]);
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-sm text-gray-900 print:p-0">
       <div className="no-print mb-6 flex justify-end">
         <PrintButton />
       </div>
-      <div className="flex items-start justify-between border-b-2 border-blue-700 pb-4">
+      <DocumentHeader branding={branding}>
+        <div className="text-lg font-semibold">QUOTATION</div>
         <div>
-          <div className="text-2xl font-bold text-blue-700">SilkTrack</div>
-          <div className="text-xs text-gray-500">China sourcing &amp; shipping to your door</div>
+          {docNo("estimate", e.number)} v{e.version}
         </div>
-        <div className="text-right">
-          <div className="text-lg font-semibold">QUOTATION</div>
-          <div>
-            {docNo("estimate", e.number)} v{e.version}
-          </div>
-          <div className="text-xs text-gray-500">Order {docNo("order", e.order.number)}</div>
-        </div>
-      </div>
+        <div className="text-xs text-gray-500">Order {docNo("order", e.order.number)}</div>
+      </DocumentHeader>
       <div className="mt-4 grid grid-cols-2 gap-4">
         <div>
           <div className="text-xs uppercase text-gray-500">Customer</div>
@@ -116,6 +112,7 @@ export default async function CustomerQuote({ params }: PageProps<"/estimates/[i
       <p className="mt-4 text-xs text-gray-500">
         Prices in Bangladeshi Taka. An upfront payment for the products is required before purchase. This quotation expires on {fmtDay(e.validUntil)}.
       </p>
+      <PaymentDetails branding={branding} reference={docNo("order", e.order.number)} />
     </div>
   );
 }

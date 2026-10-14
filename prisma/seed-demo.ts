@@ -83,6 +83,24 @@ async function main() {
   // built from the same rules and templates the app uses.
   await staffUser("cs.demo@silktrack.test", "Demo CS", "CS", "Asia/Dhaka");
   await staffUser("china.demo@silktrack.test", "Demo China", "PURCHASE", "Asia/Shanghai");
+  await staffUser("admin.demo@silktrack.test", "Demo Admin", "ADMIN", "Asia/Dhaka");
+
+  // Organization details and payment accounts for PDFs (Settings → Organization / Payment information).
+  const org = await prisma.setting.findUnique({ where: { key: "organization" } });
+  const orgValue = (org?.value ?? {}) as Record<string, unknown>;
+  if (!orgValue.phone) {
+    const value = { name: "SilkTrack", tagline: "China sourcing & shipping to your door", phone: "+880 1700-000000", email: "hello@silktrack.test", website: "www.silktrack.test", address: "House 12, Road 5, Gulshan-1\nDhaka 1212, Bangladesh", logo: orgValue.logo ?? null };
+    await prisma.setting.upsert({ where: { key: "organization" }, update: { value }, create: { key: "organization", value, description: "Organization details for PDFs" } });
+  }
+  if ((await prisma.paymentAccount.count()) === 0) {
+    await prisma.paymentAccount.createMany({
+      data: [
+        { type: "BANK", providerName: "Dutch-Bangla Bank PLC", accountName: "SilkTrack Trading", accountNumber: "123.110.0045678", branch: "Gulshan", routingNumber: "090261726", sortOrder: 1, showOnPdf: true },
+        { type: "MOBILE_BANKING", providerName: "bKash", accountName: "SilkTrack", accountNumber: "01700-000000", notes: "Merchant – choose Payment and use your order number as reference", sortOrder: 2, showOnPdf: true },
+        { type: "MOBILE_BANKING", providerName: "Nagad", accountName: "SilkTrack", accountNumber: "01800-000000", notes: "Hidden from PDFs (demo of the toggle)", sortOrder: 3, showOnPdf: false },
+      ],
+    });
+  }
   const staff = await prisma.user.findMany({ where: { active: true }, select: { id: true, role: true } });
   const accounts = await prisma.portalAccount.findMany({ where: { status: "ACTIVE" }, select: { id: true, kind: true, customerId: true } });
   const agentCustomerIds = new Set((await prisma.customer.findMany({ where: { agentAccountId: agent.id }, select: { id: true } })).map((c) => c.id));
@@ -124,6 +142,7 @@ async function main() {
   console.log(`Agent portal login:    mobile ${AGENT_PHONE} / password ${AGENT_PASSWORD}`);
   console.log(`CS login:    cs.demo@silktrack.test / ${STAFF_PASSWORD}`);
   console.log(`China login: china.demo@silktrack.test / ${STAFF_PASSWORD}`);
+  console.log(`Admin login: admin.demo@silktrack.test / ${STAFF_PASSWORD} (local demo only)`);
   console.log("Every role now has a few unread demo notifications.");
   console.log(`Demo customer's ${"SHO-" + String(shipPortal.number).padStart(6, "0")} is in shipment ${shipment.code}; their Buy for Me requests are not in a shipment yet.`);
 }

@@ -6,6 +6,8 @@ import { allocate, sum } from "@/lib/money";
 import { sampleAmounts } from "@/server/samples";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { getDocumentBranding } from "@/server/organization";
+import { DocumentHeader, PaymentDetails } from "@/components/document-branding";
 
 // Customer-facing sample invoice in BDT. Use the browser's "Save as PDF".
 export default async function SampleInvoice({ params }: PageProps<"/samples/[id]/invoice">) {
@@ -33,23 +35,18 @@ export default async function SampleInvoice({ params }: PageProps<"/samples/[id]
   const paid = sum(s.payments.map((p) => (p.type === "REFUND" ? p.amountBdt.neg() : p.amountBdt)));
   const amt = sampleAmounts(s, paid);
   const c = s.customer;
+  const branding = await getDocumentBranding();
 
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-sm text-gray-900 print:p-0">
       <div className="no-print mb-6 flex justify-end">
         <PrintButton />
       </div>
-      <div className="flex items-start justify-between border-b-2 border-blue-700 pb-4">
-        <div>
-          <div className="text-2xl font-bold text-blue-700">SilkTrack</div>
-          <div className="text-xs text-gray-500">China sourcing &amp; shipping to your door</div>
-        </div>
-        <div className="text-right">
-          <div className="text-lg font-semibold">SAMPLE INVOICE</div>
-          <div>{docNo("sample", s.number)}</div>
-          {s.order && <div className="text-xs text-gray-500">Order {docNo("order", s.order.number)}</div>}
-        </div>
-      </div>
+      <DocumentHeader branding={branding}>
+        <div className="text-lg font-semibold">SAMPLE INVOICE</div>
+        <div>{docNo("sample", s.number)}</div>
+        {s.order && <div className="text-xs text-gray-500">Order {docNo("order", s.order.number)}</div>}
+      </DocumentHeader>
       <div className="mt-4 grid grid-cols-2 gap-4">
         <div>
           <div className="text-xs uppercase text-gray-500">Bill to</div>
@@ -112,10 +109,12 @@ export default async function SampleInvoice({ params }: PageProps<"/samples/[id]
           )}
         </tbody>
       </table>
-      <p className="mt-8 text-xs text-gray-500">
-        {s.paymentRequired ? `Please pay ${fmtBdt(amt.beforePurchase)} before we purchase the sample${amt.onDelivery.gt(0) ? "; shipping is paid on delivery" : ""}. ` : ""}
-        Payment by bKash, Nagad or bank transfer. Please quote {docNo("sample", s.number)} as the reference.
-      </p>
+      {s.paymentRequired && (
+        <p className="mt-8 text-xs text-gray-500">
+          Please pay {fmtBdt(amt.beforePurchase)} before we purchase the sample{amt.onDelivery.gt(0) ? "; shipping is paid on delivery" : ""}.
+        </p>
+      )}
+      <PaymentDetails branding={branding} reference={docNo("sample", s.number)} />
     </div>
   );
 }
