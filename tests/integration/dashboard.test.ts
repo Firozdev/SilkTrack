@@ -34,7 +34,7 @@ describe("dashboards", () => {
     await recordPayment(cs, b.id, { type: "ADVANCE", amountBdt: "500", method: "CASH" });
 
     const bd = await bdDashboard();
-    expect(bd).toMatchObject({ newRequests: 0, sentToChina: 2, quotationsToReview: 0, quoted: 0, upfrontRequested: 1 });
+    expect(bd).toMatchObject({ withChina: 2, quotationsToReview: 0, quoted: 0, upfrontRequested: 1 });
     const cn = await chinaDashboard();
     expect(cn).toMatchObject({ toPrice: 2, readyToBuy: 1, needPaymentRequest: 0, waitingForPayment: 1 });
 

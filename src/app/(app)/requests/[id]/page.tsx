@@ -20,7 +20,6 @@ import {
   holdAction,
   paymentAction,
   resumeAction,
-  sendToChinaAction,
 } from "../actions";
 
 export default async function RequestPage({ params }: PageProps<"/requests/[id]">) {
@@ -32,7 +31,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
 
   const showSelling = canSeeSelling(user);
   const canEdit = can(user.role, "request:edit");
-  const editable = ["NEW", "SENT_TO_CHINA", "SAMPLING", "QUOTED"].includes(order.requestStatus);
+  const editable = ["NEW", "SAMPLING", "QUOTED"].includes(order.requestStatus);
   const closed = order.status === "CANCELLED" || order.status === "DELIVERED";
   const payments = "payments" in order ? order.payments : [];
   const released = isReleasedForPurchase({ requestStatus: order.requestStatus, payments });
@@ -133,7 +132,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
             title="China quotation"
             actions={
               can(user.role, "estimate:edit") &&
-              order.requestStatus === "SENT_TO_CHINA" &&
+              order.requestStatus === "NEW" &&
               !order.estimates.some((e) => ["SUBMITTED_BY_CHINA", "REVIEWED_BY_BD", "SENT_TO_CUSTOMER"].includes(e.status)) && (
                 <Link href={`/estimates/new?order=${order.id}`} className={btnPrimaryCls}>
                   {order.estimates[0]?.status === "DRAFT" ? "Continue quotation" : "Prepare quotation"}
@@ -143,7 +142,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
           >
             {order.estimates.length === 0 ? (
               <p className="text-sm text-gray-500">
-                {order.requestStatus === "NEW" ? "Send the request to China to get a quotation." : "Waiting for the China team to prepare the quotation."}
+                Waiting for the China team to prepare the quotation.
               </p>
             ) : (
               <ul className="space-y-1 text-sm">
@@ -280,11 +279,6 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
           {!closed && (
             <Card title="Actions">
               <div className="flex flex-wrap gap-2">
-                {canEdit && order.requestStatus === "NEW" && (
-                  <ActionForm action={sendToChinaAction} submitLabel={order.type === "BULK" ? "Send to China for estimate" : "Send to China"}>
-                    {hidden}
-                  </ActionForm>
-                )}
                 {(canEdit || can(user.role, "purchase:edit")) &&
                   (order.status === "ON_HOLD" ? (
                     <ActionForm action={resumeAction} submitLabel="Resume" variant="default">

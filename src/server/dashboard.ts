@@ -23,9 +23,8 @@ export async function ordersByStatus() {
 
 /** Bangladesh (CS) view. */
 export async function bdDashboard() {
-  const [newRequests, sentToChina, sampling, quotationsToReview, quoted, upfrontRequested, priceApprovals, openIssues, payments, invoices] = await Promise.all([
+  const [withChina, sampling, quotationsToReview, quoted, upfrontRequested, priceApprovals, openIssues, payments, invoices] = await Promise.all([
     prisma.order.count({ where: { requestStatus: "NEW" } }),
-    prisma.order.count({ where: { requestStatus: "SENT_TO_CHINA" } }),
     prisma.order.count({ where: { requestStatus: "SAMPLING" } }),
     // Quotations China submitted that BD still has to price / send.
     prisma.estimate.count({ where: { status: { in: ["SUBMITTED_BY_CHINA", "REVIEWED_BY_BD"] } } }),
@@ -44,7 +43,7 @@ export async function bdDashboard() {
     const paid = sum(payments.filter((p) => p.orderId === orderId).map((p) => (p.type === "REFUND" ? D(p.amountBdt).neg() : p.amountBdt)));
     if (total.gt(paid)) balance = balance.add(total.sub(paid));
   }
-  return { newRequests, sentToChina, sampling, quotationsToReview, quoted, upfrontRequested, priceApprovals, openIssues, balanceToCollect: balance, invoicesOpen: invoiced.size };
+  return { withChina, sampling, quotationsToReview, quoted, upfrontRequested, priceApprovals, openIssues, balanceToCollect: balance, invoicesOpen: invoiced.size };
 }
 
 /** China (purchase team) view. */
@@ -52,7 +51,7 @@ export async function chinaDashboard(now = new Date()) {
   const day = today(CN_TZ, now);
   const [queue, toPrice, awaiting, readyToShip, shipments, openIssues] = await Promise.all([
     purchaseQueue(),
-    prisma.order.count({ where: { requestStatus: "SENT_TO_CHINA", status: { not: "ON_HOLD" } } }),
+    prisma.order.count({ where: { requestStatus: "NEW", status: { not: "ON_HOLD" } } }),
     prisma.supplierOrder.findMany({ where: { status: { in: ["PURCHASED", "SHIPPED_BY_SUPPLIER"] } }, select: { expectedArrivalAt: true } }),
     prisma.receiving.count({ where: { status: "READY_TO_SHIP" } }),
     acceptingShipments(undefined, now),

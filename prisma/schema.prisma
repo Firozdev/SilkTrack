@@ -76,8 +76,8 @@ enum OrderStatus {
 
 /// Module 1 request workflow between CS and China.
 enum RequestStatus {
+  /// With the China team, waiting for their quotation (requests go there directly).
   NEW
-  SENT_TO_CHINA
   /// A sample is in progress (requested after the China quotation).
   SAMPLING
   QUOTED

@@ -80,7 +80,7 @@ describe("product requests", () => {
     const admin = await makeUser("ADMIN");
     await makeRate(toYmd(today(BD_TZ)), "17", admin.id);
     const { order } = await createRequest(cs, base());
-    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).requestStatus).toBe("SENT_TO_CHINA");
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).requestStatus).toBe("NEW");
     expect(await prisma.notification.count({ where: { type: "BUY_REQUEST_NEW", user: { role: "PURCHASE" } } })).toBe(1);
     await expect(markCustomerApproved(cs, order.id)).rejects.toThrow(/quoted/);
 
@@ -114,6 +114,21 @@ describe("product requests", () => {
     expect(o.status).toBe("CANCELLED");
     expect(o.requestStatus).toBe("CANCELLED");
     expect(o.lines.every((l) => l.status === "CANCELLED")).toBe(true);
+  });
+
+  it("a portal request goes straight into the China queue with a notification – no send step", async () => {
+    const cs = await makeUser("CS");
+    const china = await makeUser("PURCHASE");
+    const { signUp, approveAccount } = await import("@/server/portal-auth");
+    const { createPortalRequest, chinaInbox } = await import("@/server/requests");
+    const acc = await signUp({ name: "Karim", phone: "01711000000", password: "secret-pass-1", address: "Mirpur" });
+    await approveAccount(cs, acc.id, "new");
+    const customerId = (await prisma.portalAccount.findUniqueOrThrow({ where: { id: acc.id } })).customerId!;
+    const { order } = await createPortalRequest(customerId, { shippingMethod: "AIR", lines: [{ productName: "Lamp", quantity: 1, links: [] }] }, { accountId: acc.id });
+    expect(order.requestStatus).toBe("NEW");
+    expect((await chinaInbox()).sent.map((o) => o.id)).toEqual([order.id]);
+    const n = await prisma.notification.findFirstOrThrow({ where: { type: "BUY_REQUEST_NEW", userId: china.id } });
+    expect(n.link).toBe(`/requests/${order.id}`);
   });
 
   it("comments notify the other team", async () => {

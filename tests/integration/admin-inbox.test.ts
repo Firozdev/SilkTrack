@@ -4,7 +4,8 @@ import { ForbiddenError } from "@/lib/permissions";
 import { BD_TZ, toYmd, today } from "@/lib/dates";
 import { adminInbox } from "@/server/dashboard";
 import { approveAccount, signUp } from "@/server/portal-auth";
-import { createPortalRequest, createRequest, sendToChina } from "@/server/requests";
+import * as requests from "@/server/requests";
+import { createPortalRequest, createRequest } from "@/server/requests";
 import { saveQuotation, submitQuotation } from "@/server/estimates";
 import { createPortalShippingOrder, createShippingOrder, receiveShippingChina } from "@/server/shipping-orders";
 import { rejectSubmission } from "@/server/payment-submissions";
@@ -41,10 +42,10 @@ describe("Admin dashboard: New Requests", () => {
     const k = await portalCustomer("01711000000");
     const { order: portal } = await createPortalRequest(k.customerId, { shippingMethod: "AIR", lines: [{ productName: "Lamp", quantity: 1, links: [] }] });
     const { order: staff } = await createRequest(cs, { customer: { name: "Rahim", phone: "01811000000", address: "x" }, shippingMethod: "AIR", lines: [{ productName: "Bag", quantity: 1, links: [] }] });
-    expect(portal.requestStatus).toBe("SENT_TO_CHINA");
-    expect(staff.requestStatus).toBe("SENT_TO_CHINA");
+    expect(portal.requestStatus).toBe("NEW"); // New = with the China team
+    expect(staff.requestStatus).toBe("NEW");
     expect(await prisma.notification.count({ where: { type: "BUY_REQUEST_NEW", userId: china.id } })).toBe(2);
-    await expect(sendToChina(cs, staff.id)).rejects.toThrow(/Only new requests/);
+    expect("sendToChina" in requests).toBe(false); // no manual "Send to China" step any more
 
     let p = await panel("buy");
     expect(p.count).toBe(2);

@@ -17,7 +17,7 @@ export default async function QuotationsPage({ searchParams }: PageProps<"/estim
   const [toQuote, list] = await Promise.all([
     can(user.role, "estimate:edit")
       ? prisma.order.findMany({
-          where: { requestStatus: "SENT_TO_CHINA", status: { not: "ON_HOLD" }, estimates: { none: { status: { in: ["SUBMITTED_BY_CHINA", "REVIEWED_BY_BD", "SENT_TO_CUSTOMER"] } } } },
+          where: { requestStatus: "NEW", status: { not: "ON_HOLD" }, estimates: { none: { status: { in: ["SUBMITTED_BY_CHINA", "REVIEWED_BY_BD", "SENT_TO_CUSTOMER"] } } } },
           orderBy: [{ priority: "desc" }, { requestedAt: "asc" }],
           include: { customer: { select: { code: true } }, _count: { select: { lines: true } }, estimates: { where: { status: "DRAFT" }, select: { version: true } } },
         })

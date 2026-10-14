@@ -40,7 +40,7 @@ const label = (s: { number: number }) => docNo("sample", s.number);
 /**
  * When the last open sample of a request is delivered or cancelled, the
  * request leaves "Sampling": back to Quoted if the quotation was sent to the
- * customer, otherwise to Sent to China.
+ * customer, otherwise back to New (with the China team).
  */
 async function endSampling(tx: Tx, orderId: string, actorId: string) {
   const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { requestStatus: true } });
@@ -48,7 +48,7 @@ async function endSampling(tx: Tx, orderId: string, actorId: string) {
   const open = await tx.sample.count({ where: { orderId, status: { notIn: ["DELIVERED", "CANCELLED"] } } });
   if (open > 0) return;
   const sent = await tx.estimate.count({ where: { orderId, status: "SENT_TO_CUSTOMER" } });
-  const next = sent ? "QUOTED" : "SENT_TO_CHINA";
+  const next = sent ? "QUOTED" : "NEW";
   await tx.order.update({ where: { id: orderId }, data: { requestStatus: next } });
   await logChanges(tx, { entityType: "Order", entityId: orderId, userId: actorId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: "SAMPLING", newValue: next }] });
 }
@@ -67,7 +67,7 @@ export async function requestSample(actor: Actor, orderId: string, input: { line
   if (lines.some((l) => !valid.has(l.orderLineId))) throw new UserError("Unknown product");
 
   const s = await prisma.$transaction(async (tx) => {
-    if (order.requestStatus === "SENT_TO_CHINA" || order.requestStatus === "QUOTED") {
+    if (order.requestStatus === "NEW" || order.requestStatus === "QUOTED") {
       await tx.order.update({ where: { id: orderId }, data: { requestStatus: "SAMPLING" } });
       await logChanges(tx, { entityType: "Order", entityId: orderId, userId: actor.id, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: order.requestStatus, newValue: "SAMPLING" }] });
     }
