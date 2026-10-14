@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { logChanges } from "@/lib/audit";
 import { UserError } from "@/lib/action";
 import { docNo } from "@/lib/format";
-import { notifyRoles } from "@/lib/notify";
+import { notify } from "./notify";
 import type { Actor } from "./actor";
 
 /** Any team member can work an issue; every change is logged. */
@@ -31,7 +31,14 @@ export async function updateIssue(actor: Actor, id: string, input: { status: Iss
       changes: issue.status === input.status ? [] : [{ field: "status", oldValue: issue.status, newValue: input.status }],
     });
   });
-  if (input.status === "RESOLVED") {
-    await notifyRoles(["CS", "ADMIN"], { type: "ISSUE_RESOLVED", title: `${docNo("issue", issue.number)} resolved`, body: input.resolution ?? "", orderId: issue.orderId }, actor.id);
+  const closing = input.status === "RESOLVED" || input.status === "CLOSED";
+  if (closing && (issue.status === "OPEN" || issue.status === "IN_PROGRESS")) {
+    const order = issue.orderId ? await prisma.order.findUnique({ where: { id: issue.orderId }, select: { id: true, number: true, customerId: true } }) : null;
+    await notify(
+      "ISSUE_RESOLVED",
+      { issue, order: order ?? undefined, customerId: order?.customerId, ref: order ? docNo("order", order.number) : docNo("issue", issue.number), staffLink: `/issues?id=${issue.id}` },
+      { issue: docNo("issue", issue.number), resolution: input.resolution ?? issue.resolution },
+      { userId: actor.id },
+    );
   }
 }

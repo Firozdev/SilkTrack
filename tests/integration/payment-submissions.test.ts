@@ -116,7 +116,7 @@ describe("Customer-reported payments", () => {
     await approveSubmission(cs, s.id);
     const p = await prisma.payment.findFirstOrThrow({ where: { orderId: order.id } });
     expect([p.type, p.amountBdt.toString(), p.paidAt.toISOString()]).toEqual(["ADVANCE", "2000", PAID.toISOString()]);
-    expect(await prisma.notification.count({ where: { type: "READY_TO_PURCHASE", userId: china.id } })).toBe(1);
+    expect(await prisma.notification.count({ where: { type: "PURCHASE_RELEASED", userId: china.id } })).toBe(1);
   });
 
   it("payment screenshots are visible only to the customer who sent them", async () => {

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { requirePortalAccount } from "@/lib/portal-session";
-import { portalLogoutAction } from "../actions";
+import { NotificationBell } from "@/components/notification-bell";
+import { portalLogoutAction, portalMarkAllReadAction, portalMarkReadAction, portalSetSoundAction } from "../actions";
 import { getDict } from "../lang";
 import { LangSwitch } from "../lang-switch";
 
@@ -30,6 +31,15 @@ export default async function PortalLayout({ children }: { children: ReactNode }
             <span className="hidden px-2 text-gray-500 sm:inline">
               {acc.kind === "AGENT" ? `${acc.name} · ${t.agentTag}` : `${acc.customer.name} (${acc.customer.code})`}
             </span>
+            <NotificationBell
+              feedUrl="/portal/api/notifications"
+              viewAllHref="/portal/notifications"
+              soundOn={acc.notifySound}
+              labels={{ notifications: t.notifications, markAllRead: t.markAllRead, viewAll: t.viewAll, empty: t.noNotifications, sound: t.sound, justNow: t.justNow, minAgo: t.minAgo, hAgo: t.hAgo, dAgo: t.dAgo }}
+              markRead={portalMarkReadAction}
+              markAllRead={portalMarkAllReadAction}
+              setSound={portalSetSoundAction}
+            />
             <Suspense>
               <LangSwitch lang={lang} label={t.language} />
             </Suspense>

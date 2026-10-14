@@ -1,3 +1,5 @@
+import { recordHistory } from "@/server/notifications";
+import { NotificationHistory } from "@/components/notification-history";
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import Link from "next/link";
@@ -26,6 +28,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
   const { id } = await params;
   const order = await getOrderView(id, user);
   if (!order) notFound();
+  const history = await recordHistory({ orderId: order.id }, "staff");
 
   const showSelling = canSeeSelling(user);
   const canEdit = can(user.role, "request:edit");
@@ -361,6 +364,9 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
             </Card>
           )}
         </div>
+      </div>
+      <div className="mt-5">
+        <NotificationHistory title="Notifications" empty="No notifications yet." items={history} fmt={(d) => fmtDateTime(d, user.timezone)} customerTag="sent to customer" />
       </div>
     </>
   );

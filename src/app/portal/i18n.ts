@@ -239,6 +239,21 @@ const en = {
   needCustomerFirst: "Add a customer on your home page first, then place the request for them.",
   forCustomer: "Customer: {name} ({code})",
   shipIntroAgent: "Your customer bought the goods. Ask the supplier to send them to our China warehouse with the customer's code (shown next to each customer) on the parcel, and tell us the tracking numbers here.",
+  // Notifications
+  notifications: "Notifications",
+  markAllRead: "Mark all as read",
+  viewAll: "View all",
+  noNotifications: "No notifications yet.",
+  sound: "Sound",
+  justNow: "just now",
+  minAgo: "{n} min ago",
+  hAgo: "{n} h ago",
+  dAgo: "{n} d ago",
+  unreadOnly: "Unread",
+  allItems: "All",
+  filter: "Filter",
+  updatesTitle: "Updates",
+  noUpdates: "No updates yet.",
 };
 
 export type Dict = typeof en;
@@ -464,6 +479,20 @@ const bn: Dict = {
   needCustomerFirst: "আগে হোম পেজে একজন কাস্টমার যোগ করুন, তারপর তার জন্য অনুরোধ পাঠান।",
   forCustomer: "কাস্টমার: {name} ({code})",
   shipIntroAgent: "আপনার কাস্টমার মাল কিনেছেন। সাপ্লায়ারকে বলুন পার্সেলে কাস্টমারের কোড (প্রতিটি কাস্টমারের পাশে দেখানো) লিখে আমাদের চীনের ওয়্যারহাউসে পাঠাতে, আর এখানে ট্র্যাকিং নম্বর দিন।",
+  notifications: "নোটিফিকেশন",
+  markAllRead: "সব পড়া হয়েছে",
+  viewAll: "সব দেখুন",
+  noNotifications: "এখনো কোনো নোটিফিকেশন নেই।",
+  sound: "শব্দ",
+  justNow: "এইমাত্র",
+  minAgo: "{n} মিনিট আগে",
+  hAgo: "{n} ঘণ্টা আগে",
+  dAgo: "{n} দিন আগে",
+  unreadOnly: "না-পড়া",
+  allItems: "সব",
+  filter: "ফিল্টার",
+  updatesTitle: "আপডেট",
+  noUpdates: "এখনো কোনো আপডেট নেই।",
 };
 
 export const DICTS: Record<Lang, Dict> = { en, bn };

@@ -7,7 +7,7 @@ import { allocate, D, money, pctChange, rmbToBdt, sum } from "@/lib/money";
 import { docNo } from "@/lib/format";
 import { diffFields, logChanges } from "@/lib/audit";
 import { getSetting } from "@/lib/settings";
-import { notifyRoles } from "@/lib/notify";
+import { notify } from "./notify";
 import { rateForConversion } from "./rates";
 import { setLineStatus } from "./status";
 import type { Actor } from "./actor";
@@ -171,10 +171,14 @@ export async function createPurchase(actor: Actor, input: PurchaseInput) {
     return so;
   });
 
-  const orders = [...new Set(orderLines.map((o) => o.order.number))].map((n) => docNo("order", n)).join(", ");
-  await notifyRoles(["CS", "ADMIN"], needsApproval
-    ? { type: "PRICE_APPROVAL_NEEDED", title: `Price change needs approval: ${orders}`, body: `Supplier price is more than ${alertPct}% above the quote (${docNo("purchase", so.number)}).`, orderId: orderLines[0].order.id }
-    : { type: "PURCHASE_DONE", title: `Purchased: ${orders}`, body: `${docNo("purchase", so.number)} from ${input.supplierName}.`, orderId: orderLines[0].order.id });
+  const orderIds = [...new Set(orderLines.map((o) => o.order.id))];
+  if (needsApproval) {
+    for (const o of await ordersOf(orderIds)) {
+      await notify("PRICE_APPROVAL_NEEDED", { order: o }, { pct: alertPct.toString(), purchase: docNo("purchase", so.number) }, { userId: actor.id });
+    }
+  } else {
+    await notifyPurchased(orderIds, docNo("purchase", so.number), input.supplierName, actor.id);
+  }
   return so;
 }
 
@@ -189,12 +193,17 @@ export async function decidePriceChange(actor: Actor, purchaseLineId: string, ap
     await tx.purchaseLine.update({ where: { id: pl.id }, data: { priceApproval: decision, priceApprovedById: actor.id, priceApprovedAt: new Date() } });
     await logChanges(tx, { entityType: "PurchaseLine", entityId: pl.id, userId: actor.id, action: "UPDATE", changes: [{ field: "priceApproval", oldValue: "PENDING", newValue: decision }] });
   });
-  await notifyRoles(["PURCHASE"], {
-    type: "PRICE_APPROVAL_RESULT",
-    title: `Price change ${approve ? "approved" : "rejected"}: ${docNo("purchase", pl.supplierOrder.number)}`,
-    body: approve ? "You can go ahead and buy." : "Do not buy at this price – mark the purchase as price changed.",
-    orderId: pl.orderLine.orderId,
-  });
+  const [order] = await ordersOf([pl.orderLine.orderId]);
+  await notify("PRICE_APPROVAL_RESULT", { order }, { approved: approve, purchase: docNo("purchase", pl.supplierOrder.number) }, { userId: actor.id });
+}
+
+const ordersOf = (ids: string[]) => prisma.order.findMany({ where: { id: { in: ids } }, select: { id: true, number: true, customerId: true } });
+
+/** Each customer order in a purchase: the customer and the BD team are told it was bought. */
+async function notifyPurchased(orderIds: string[], purchase: string, supplier: string | undefined, actorId: string) {
+  for (const o of await ordersOf(orderIds)) {
+    await notify("PURCHASED", { order: o, customerId: o.customerId }, { purchase, supplier }, { userId: actorId });
+  }
 }
 
 async function loadSO(id: string) {
@@ -234,7 +243,8 @@ export async function markPurchased(actor: Actor, id: string, completion: { trac
     });
     await setLineStatus(tx, so.lines.map((l) => l.orderLineId), "PURCHASED", { actorId: actor.id, message: `Purchased (${docNo("purchase", so.number)})`, onlyForward: true });
   });
-  await notifyRoles(["CS", "ADMIN"], { type: "PURCHASE_DONE", title: `Purchased: ${docNo("purchase", so.number)}`, body: "Price approved and order placed." });
+  const orderIds = (await prisma.orderLine.findMany({ where: { id: { in: so.lines.map((l) => l.orderLineId) } }, select: { orderId: true } })).map((l) => l.orderId);
+  await notifyPurchased([...new Set(orderIds)], docNo("purchase", so.number), undefined, actor.id);
 }
 
 export type ShippingInput = { courierName: string; trackingNo: string; trackingUrl?: string; expectedArrivalAt?: Date };
@@ -285,7 +295,10 @@ export async function markProblem(actor: Actor, id: string, status: "OUT_OF_STOC
     const back = await tx.orderLine.findMany({ where: { id: { in: so.lines.map((l) => l.orderLineId) }, status: "PURCHASED" }, select: { id: true } });
     await setLineStatus(tx, back.map((l) => l.id), "APPROVED", { actorId: actor.id, message: `${status.replace(/_/g, " ").toLowerCase()} – back to purchase queue`, leg: "SUPPLIER_TO_CHINA" });
   });
-  await notifyRoles(["CS", "ADMIN"], { type: "PURCHASE_PROBLEM", title: `${docNo("purchase", so.number)}: ${status.replace(/_/g, " ").toLowerCase()}`, body: note ?? "" });
+  const orderIds = (await prisma.orderLine.findMany({ where: { id: { in: so.lines.map((l) => l.orderLineId) } }, select: { orderId: true } })).map((l) => l.orderId);
+  for (const o of await ordersOf([...new Set(orderIds)])) {
+    await notify("PURCHASE_PROBLEM", { order: o }, { problem: status.replace(/_/g, " ").toLowerCase(), purchase: docNo("purchase", so.number), note }, { userId: actor.id });
+  }
 }
 
 export function listPurchases(where: Prisma.SupplierOrderWhereInput = {}) {
@@ -312,10 +325,5 @@ export async function requestUpfrontPayment(actor: Actor, orderId: string, note?
     await logChanges(tx, { entityType: "Order", entityId: orderId, userId: actor.id, action: "UPDATE", changes: [{ field: "advanceRequested", oldValue: order.advanceRequestedAt ? "yes" : null, newValue: note ?? "yes" }] });
     await tx.comment.create({ data: { orderId, authorId: actor.id, body: `Upfront payment requested before purchase.${note ? ` ${note}` : ""}` } });
   });
-  await notifyRoles(["CS", "ADMIN"], {
-    type: "UPFRONT_PAYMENT_REQUESTED",
-    title: `Upfront payment requested: ${docNo("order", order.number)}`,
-    body: note ?? "Collect the advance from the customer and record it to release the purchase.",
-    orderId,
-  });
+  await notify("UPFRONT_PAYMENT_REQUESTED", { order }, { note }, { userId: actor.id });
 }

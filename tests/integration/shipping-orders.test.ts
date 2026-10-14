@@ -123,7 +123,7 @@ describe("Shipping-only service", () => {
     await expect(recordQa(cs, so.id, { result: "FAILED" })).rejects.toThrow(ForbiddenError);
     await recordQa(china, so.id, { result: "FAILED", notes: "Stitching loose" });
     expect((await get(so.id)).status).toBe("QA_DONE");
-    const n = await prisma.notification.findFirst({ where: { type: "SHIPPING_QA_FAILED", userId: cs.id } });
+    const n = await prisma.notification.findFirst({ where: { type: "QA_FAILED", userId: cs.id } });
     expect(n?.body).toMatch(/Stitching loose/);
 
     // BD puts it on hold; nothing moves until released, then it returns to QA done

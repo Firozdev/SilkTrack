@@ -1,3 +1,5 @@
+import { recordHistory } from "@/server/notifications";
+import { NotificationHistory } from "@/components/notification-history";
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { Alert, Attachments, Card, Dl, Field, inputCls } from "@/components/ui";
@@ -26,6 +28,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
   const cid = await ownerOf(acc, "shipping", id);
   const s = cid ? await portalShippingOrder(cid, id) : null;
   if (!cid || !s) notFound();
+  const history = await recordHistory({ shippingOrderId: s.id }, "customer");
   const [due, rates] = await Promise.all([amountDue(cid, { kind: "shipping", id: s.id }), rateCardFor(s.shippingRateId)]);
   const air = s.shippingMethod === "AIR";
   const money = (label: string, v: { gt(n: number): boolean } | null, text: string): [string, string][] => (v?.gt(0) ? [[label, text]] : []);
@@ -141,6 +144,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
           )}
         </div>
       </div>
+      <NotificationHistory title={t.updatesTitle} empty={t.noUpdates} items={history} fmt={(d) => fmtDateTime(d, BD_TZ)} />
     </div>
   );
 }

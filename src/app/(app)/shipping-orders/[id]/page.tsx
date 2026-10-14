@@ -1,3 +1,5 @@
+import { recordHistory } from "@/server/notifications";
+import { NotificationHistory } from "@/components/notification-history";
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { CartonRows } from "@/components/carton-rows";
@@ -62,6 +64,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
     },
   });
   if (!raw) notFound();
+  const history = await recordHistory({ shippingOrderId: raw.id }, "staff");
   // PURCHASE never receives the customer charges or payments.
   const s = redactFor(user, raw);
   const showMoney = canSeeSelling(user);
@@ -496,6 +499,9 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
             </details>
           )}
         </div>
+      </div>
+      <div className="mt-5">
+        <NotificationHistory title="Notifications" empty="No notifications yet." items={history} fmt={(d) => fmtDateTime(d, user.timezone)} customerTag="sent to customer" />
       </div>
     </>
   );

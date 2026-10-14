@@ -1,3 +1,5 @@
+import { recordHistory } from "@/server/notifications";
+import { NotificationHistory } from "@/components/notification-history";
 import { notFound } from "next/navigation";
 import { A, Attachments, Card, Dl } from "@/components/ui";
 import { BD_TZ, fmtDateTime, fmtDay } from "@/lib/dates";
@@ -19,6 +21,7 @@ export default async function PortalSamplePage({ params }: PageProps<"/portal/sa
   const cid = await ownerOf(acc, "sample", id);
   const s = cid ? await portalSample(cid, id) : null;
   if (!cid || !s) notFound();
+  const history = await recordHistory({ sampleId: s.id }, "customer");
   const due = await amountDue(cid, { kind: "sample", id: s.id });
   return (
     <div className="space-y-5">
@@ -80,6 +83,7 @@ export default async function PortalSamplePage({ params }: PageProps<"/portal/sa
           </Card>
         </div>
       </div>
+      <NotificationHistory title={t.updatesTitle} empty={t.noUpdates} items={history} fmt={(d) => fmtDateTime(d, BD_TZ)} />
     </div>
   );
 }

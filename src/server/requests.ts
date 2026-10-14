@@ -8,7 +8,7 @@ import { D, sum } from "@/lib/money";
 import { docNo } from "@/lib/format";
 import { logChanges } from "@/lib/audit";
 import { getSetting } from "@/lib/settings";
-import { notifyRoles } from "@/lib/notify";
+import { notify } from "./notify";
 import { portalRequestEditable } from "@/lib/editability";
 import { deriveOrderStatus, setLineStatus, setOrderStatus } from "./status";
 import type { Actor } from "./actor";
@@ -111,16 +111,13 @@ export type PortalRequestInput = Omit<RequestInput, "customer" | "type" | "prior
  * reveal other customers' orders); it goes straight to the China team like a staff request.
  */
 export async function createPortalRequest(customerId: string, input: PortalRequestInput, placedBy?: PlacedBy) {
-  const res = await insertRequest({ ...input, customer: { id: customerId, name: "", phone: "", address: "" }, allowDuplicates: true }, { source: "PORTAL", customerId, accountId: placedBy?.accountId });
-  const from = placedBy?.agentName ? `agent ${placedBy.agentName}` : "a customer";
-  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_REQUEST", title: `Portal request: ${docNo("order", res.order.number)}`, body: `${res.order.lines.length} product(s) from ${from} – sent to the China team for a quotation.`, orderId: res.order.id });
-  return res;
+  return insertRequest({ ...input, customer: { id: customerId, name: "", phone: "", address: "" }, allowDuplicates: true }, { source: "PORTAL", customerId, accountId: placedBy?.accountId, agentName: placedBy?.agentName });
 }
 
 /** The portal login that placed a request: the customer's own, or their agent's (agentName set). */
 export type PlacedBy = { accountId: string; agentName?: string };
 
-async function insertRequest(input: RequestInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string; accountId?: string }) {
+async function insertRequest(input: RequestInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string; accountId?: string; agentName?: string }) {
   const actorId = by.source === "STAFF" ? by.actorId : null;
   if (input.lines.length === 0) throw new UserError("Add at least one product");
 
@@ -181,17 +178,13 @@ async function insertRequest(input: RequestInput, by: { actorId: string; source:
     await logChanges(tx, { entityType: "Order", entityId: order.id, userId: actorId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: "NEW", newValue: "SENT_TO_CHINA" }] });
     return order;
   });
-  await notifyChinaTeam(order);
+  await notifyNewRequest(order, by.source === "STAFF" ? { userId: by.actorId } : { accountId: by.accountId }, by.source === "PORTAL" ? by.agentName : undefined);
   return { order, suggestedType: suggested };
 }
 
-async function notifyChinaTeam(order: { id: string; number: number; type: OrderType; shippingMethod: string; lines: unknown[] }) {
-  await notifyRoles(["PURCHASE"], {
-    type: order.type === "BULK" ? "ESTIMATE_REQUESTED" : "NEW_REQUEST",
-    title: order.type === "BULK" ? `Estimate requested: ${docNo("order", order.number)}` : `New request: ${docNo("order", order.number)}`,
-    body: `${order.lines.length} product(s), ${order.shippingMethod.toLowerCase()} shipping.`,
-    orderId: order.id,
-  });
+/** A new Buy for Me request reached the China team (Admin and the customer are told too). */
+async function notifyNewRequest(order: { id: string; number: number; customerId: string; type: OrderType; shippingMethod: string; lines: unknown[] }, cause: { userId?: string; accountId?: string }, agent?: string) {
+  await notify("BUY_REQUEST_NEW", { order, customerId: order.customerId }, { bulk: order.type === "BULK", items: order.lines.length, method: order.shippingMethod.toLowerCase(), agent }, cause);
 }
 
 async function loadOrder(orderId: string) {
@@ -214,7 +207,7 @@ export async function sendToChina(actor: Actor, orderId: string) {
   const order = await loadOrder(orderId);
   if (order.requestStatus !== "NEW") throw new UserError("Only new requests can be sent to China");
   await prisma.$transaction((tx) => setRequestStatus(tx, orderId, order.requestStatus, "SENT_TO_CHINA", actor.id));
-  await notifyChinaTeam(order);
+  await notifyNewRequest(order, { userId: actor.id });
 }
 
 /** Customer accepted the quote. Purchase is released once an advance is recorded. */
@@ -234,14 +227,9 @@ export async function applyCustomerApproval(orderId: string, actorId: string | n
     await setLineStatus(tx, order.lines.map((l) => l.id), "APPROVED", { actorId, message, onlyForward: true });
   });
   if (hasAdvance(order.payments)) {
-    await notifyPurchaseReleased(order.id, order.number);
+    await notifyPurchaseReleased(order);
   } else {
-    await notifyRoles(["PURCHASE"], {
-      type: "APPROVED_FOR_PURCHASE",
-      title: `Customer approved: ${docNo("order", order.number)}`,
-      body: "In the purchase queue – request the upfront payment from the BD team.",
-      orderId,
-    });
+    await notify("APPROVED_FOR_PURCHASE", { order }, {}, { userId: actorId });
   }
 }
 
@@ -249,13 +237,8 @@ function hasAdvance(payments: { type: string; amountBdt: Prisma.Decimal }[]) {
   return sum(payments.filter((p) => p.type === "ADVANCE").map((p) => p.amountBdt)).gt(0);
 }
 
-async function notifyPurchaseReleased(orderId: string, number: number) {
-  await notifyRoles(["PURCHASE"], {
-    type: "READY_TO_PURCHASE",
-    title: `Payment confirmed – ready to purchase: ${docNo("order", number)}`,
-    body: "BD confirmed the upfront payment was received.",
-    orderId,
-  });
+async function notifyPurchaseReleased(order: { id: string; number: number }) {
+  await notify("PURCHASE_RELEASED", { order });
 }
 
 export async function markRejected(actor: Actor, orderId: string) {
@@ -323,7 +306,10 @@ export async function recordPayment(actor: Actor, orderId: string, input: Paymen
     return p;
   });
   if (input.type === "ADVANCE" && !hadAdvance && order.requestStatus === "CUSTOMER_APPROVED") {
-    await notifyPurchaseReleased(order.id, order.number);
+    await notifyPurchaseReleased(order);
+  }
+  if (input.type !== "REFUND") {
+    await notify("PAYMENT_CONFIRMED", { order, customerId: order.customerId }, { amount: D(input.amountBdt).toFixed(2), method: input.method.replace(/_/g, " ").toLowerCase(), kind: input.type.toLowerCase() }, { userId: actor.id });
   }
   return payment;
 }
@@ -331,13 +317,9 @@ export async function recordPayment(actor: Actor, orderId: string, input: Paymen
 export async function addComment(actor: Actor, orderId: string, body: string) {
   await loadOrder(orderId);
   const comment = await prisma.comment.create({ data: { orderId, authorId: actor.id, body } });
-  const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { number: true } });
+  const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, select: { id: true, number: true } });
   // Ping the other side of the BD ↔ China conversation.
-  await notifyRoles(
-    actor.role === "PURCHASE" ? ["CS", "ADMIN"] : ["PURCHASE"],
-    { type: "COMMENT", title: `New comment on ${docNo("order", order.number)}`, body: body.slice(0, 140), orderId },
-    actor.id,
-  );
+  await notify(actor.role === "PURCHASE" ? "COMMENT_FROM_CHINA" : "COMMENT_FROM_BD", { order }, { text: body.slice(0, 140) }, { userId: actor.id });
   return comment;
 }
 
@@ -463,12 +445,7 @@ export async function updatePortalRequest(customerId: string, orderId: string, i
     await logChanges(tx, { entityType: "Order", entityId: orderId, userId: null, action: "UPDATE", changes: [{ field: "customerEdit", oldValue: null, newValue: summary }] });
     return ids;
   });
-  await notifyRoles(order.requestStatus === "SENT_TO_CHINA" ? ["CS", "ADMIN", "PURCHASE"] : ["CS", "ADMIN"], {
-    type: "PORTAL_REQUEST_EDITED",
-    title: `Customer changed request ${docNo("order", order.number)}`,
-    body: "Check the updated products before quoting.",
-    orderId,
-  });
+  await notify("PORTAL_REQUEST_EDITED", { order });
   return ids;
 }
 
@@ -480,5 +457,5 @@ export async function cancelPortalRequest(customerId: string, orderId: string, r
     await setRequestStatus(tx, orderId, order.requestStatus, "CANCELLED", null);
     await setLineStatus(tx, order.lines.map((l) => l.id), "CANCELLED", { actorId: null, message: msg });
   });
-  await notifyRoles(order.requestStatus === "SENT_TO_CHINA" ? ["CS", "ADMIN", "PURCHASE"] : ["CS", "ADMIN"], { type: "PORTAL_REQUEST_CANCELLED", title: `Customer cancelled ${docNo("order", order.number)}`, body: reason ?? "No reason given.", orderId });
+  await notify("PORTAL_REQUEST_CANCELLED", { order }, { reason });
 }

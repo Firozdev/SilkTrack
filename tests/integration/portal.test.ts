@@ -149,7 +149,7 @@ describe("Customer portal – data", () => {
     expect(order.customerId).toBe(a.customerId);
     expect(order.source).toBe("PORTAL");
     expect(order.createdById).toBeNull();
-    expect(await prisma.notification.count({ where: { type: "PORTAL_REQUEST", userId: cs.id } })).toBe(1);
+    expect(await prisma.notification.count({ where: { type: "BUY_REQUEST_NEW", userId: cs.id } })).toBe(1);
     // Staff carry on as usual
 
     const so = await createPortalShippingOrder(a.customerId!, { shippingMethod: "SEA", qaRequested: true, items: [{ productName: "Chairs", quantity: 10 }] });
@@ -230,7 +230,7 @@ describe("Customer portal – files, quote approval", () => {
     const o = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { lines: true } });
     expect(o.requestStatus).toBe("CUSTOMER_APPROVED");
     expect(o.lines.every((l) => l.status === "APPROVED")).toBe(true);
-    expect(await prisma.notification.count({ where: { type: "PORTAL_QUOTE_APPROVED", userId: cs.id } })).toBe(1);
+    expect(await prisma.notification.count({ where: { type: "QUOTE_DECIDED", userId: cs.id } })).toBe(1);
     expect(await prisma.notification.count({ where: { type: "APPROVED_FOR_PURCHASE", userId: china.id } })).toBe(1);
     const audit = await prisma.auditLog.findFirst({ where: { entityType: "Estimate", entityId: estimateId, field: "status", newValue: { equals: "APPROVED" } } });
     expect(audit?.userId).toBeNull(); // done by the customer, not staff

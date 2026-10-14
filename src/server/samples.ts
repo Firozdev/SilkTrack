@@ -6,7 +6,8 @@ import { UserError } from "@/lib/action";
 import { D, allocate, cbmOf, money, rmbToBdt, sum } from "@/lib/money";
 import { docNo } from "@/lib/format";
 import { diffFields, logChanges } from "@/lib/audit";
-import { notifyRoles, queueCustomerMessage } from "@/lib/notify";
+import { queueCustomerMessage } from "@/lib/notify";
+import { notify } from "./notify";
 import { rateForConversion } from "./rates";
 import { isAccepting, recalcTotals } from "./shipments";
 import { findOrCreateCustomer, type CustomerInput } from "./requests";
@@ -89,7 +90,7 @@ export async function requestSample(actor: Actor, orderId: string, input: { line
     await logChanges(tx, { entityType: "Sample", entityId: s.id, userId: actor.id, action: "CREATE" });
     return s;
   });
-  await notifyRoles(["PURCHASE"], { type: "SAMPLE_REQUESTED", title: `Sample requested: ${docNo("order", order.number)}`, body: `${label(s)} – prepare the sample invoice.`, orderId });
+  await notify("SAMPLE_REQUESTED", { sample: s }, { detail: `For ${docNo("order", order.number)}` }, { userId: actor.id });
   return s;
 }
 
@@ -119,7 +120,7 @@ export async function createStandaloneSample(actor: Actor, input: StandaloneSamp
     await logChanges(tx, { entityType: "Sample", entityId: s.id, userId: actor.id, action: "CREATE" });
     return s;
   });
-  await notifyRoles(["PURCHASE"], { type: "SAMPLE_REQUESTED", title: `Sample requested: ${label(s)}`, body: `Stand-alone sample for ${s.customer.code} – prepare the sample invoice.` });
+  await notify("SAMPLE_REQUESTED", { sample: s }, { detail: `Stand-alone sample for ${s.customer.code}` }, { userId: actor.id });
   return s;
 }
 
@@ -190,12 +191,7 @@ export async function invoiceSample(actor: Actor, id: string, input: SampleInvoi
       invoicedAt: new Date(),
     });
   });
-  await notifyRoles(["CS", "ADMIN"], {
-    type: "SAMPLE_INVOICED",
-    title: `Sample invoice: ${label(s)} (${ref(s)})`,
-    body: `৳${totalBdt.toFixed(2)}. ${input.paymentRequired ? "Collect payment from the customer and record it." : "China will buy the sample without waiting for payment."}`,
-    orderId: s.orderId,
-  });
+  await notify("SAMPLE_INVOICED", { sample: s, ref: `${label(s)} (${ref(s)})` }, { total: totalBdt.toFixed(2), paymentRequired: input.paymentRequired }, { userId: actor.id });
 }
 
 /** BD confirms the customer paid for the sample. */
@@ -260,7 +256,7 @@ export async function recordSamplePayment(actor: Actor, id: string, input: { amo
     if (released) await move(tx, s, "PAID", actor.id, "Purchase amount paid – China can buy the sample");
     return p;
   });
-  if (released) await notifyRoles(["PURCHASE"], { type: "SAMPLE_PAID", title: `Sample paid – buy now: ${label(s)}`, body: ref(s), orderId: s.orderId });
+  if (released) await notify("SAMPLE_PAID", { sample: s }, { detail: ref(s) }, { userId: actor.id });
   return payment;
 }
 
@@ -282,7 +278,7 @@ export async function purchaseSample(actor: Actor, id: string, input: SamplePurc
       purchasedAt: new Date(),
     }),
   );
-  await notifyRoles(["CS"], { type: "SAMPLE_PURCHASED", title: `Sample purchased: ${label(s)}`, body: ref(s), orderId: s.orderId });
+  await notify("SAMPLE_PURCHASED", { sample: s }, { detail: ref(s) }, { userId: actor.id });
 }
 
 export type SampleShipInput = {
@@ -334,7 +330,7 @@ export async function shipSample(actor: Actor, id: string, input: SampleShipInpu
     // Keep planned-shipment totals right (old and new shipment).
     for (const shipmentId of new Set([s.shipmentId, sh?.id].filter((x): x is string => !!x))) await recalcTotals(tx, shipmentId);
   });
-  await notifyRoles(["CS", "ADMIN"], { type: "SAMPLE_SHIPPED", title: `Sample on the way: ${label(s)}`, body: how, orderId: s.orderId });
+  await notify("SAMPLE_SHIPPED", { sample: s }, { how }, { userId: actor.id });
 }
 
 export async function receiveSampleBd(actor: Actor, id: string) {
@@ -363,7 +359,7 @@ export async function deliverSample(actor: Actor, id: string, feedback?: string,
     await move(tx, s, "DELIVERED", actor.id, `Delivered to customer${feedback ? ` – feedback: ${feedback}` : ""}`, { deliveredAt: new Date(), customerFeedback: feedback ?? null });
     if (s.orderId) await endSampling(tx, s.orderId, actor.id);
   });
-  await notifyRoles(["PURCHASE"], { type: "SAMPLE_DELIVERED", title: `Sample delivered: ${label(s)}`, body: feedback ? `Customer feedback: ${feedback}` : "Delivered to the customer.", orderId: s.orderId });
+  await notify("SAMPLE_DELIVERED", { sample: s }, { feedback }, { userId: actor.id });
 }
 
 /** Balance due for a sample (for pages). */

@@ -1,7 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { UserError } from "@/lib/action";
-import { docNo } from "@/lib/format";
 import { setLineStatus } from "./status";
 import { confirmShippingReceipt, notifyReceipt, receiptData } from "./shipping-orders";
 
@@ -25,7 +24,7 @@ export async function confirmReceipt(customerId: string, kind: "order" | "shippi
       prisma.sample.update({ where: { id }, data: { ...data, customerFeedback: s.customerFeedback ?? input.note?.trim() ?? null } }),
       prisma.sampleEvent.create({ data: { sampleId: id, message: `Customer confirmed receipt${input.problem ? " – PROBLEM reported" : ""}${input.note ? `: ${input.note}` : ""}` } }),
     ]);
-    return notifyReceipt(docNo("sample", s.number), input, s.orderId ?? undefined);
+    return notifyReceipt({ sample: s }, input);
   }
 
   const o = await prisma.order.findFirst({ where: { id, customerId }, include: { lines: { select: { id: true, status: true } } } });
@@ -39,5 +38,5 @@ export async function confirmReceipt(customerId: string, kind: "order" | "shippi
     await setLineStatus(tx, open, "DELIVERED", { actorId: null, message: msg, leg: "BD_TO_CUSTOMER", onlyForward: true });
     await tx.delivery.updateMany({ where: { orderId: id, status: { in: ["ASSIGNED", "OUT_FOR_DELIVERY"] } }, data: { status: "DELIVERED", deliveredAt: new Date(), receiverName: "Customer (portal)" } });
   });
-  await notifyReceipt(docNo("order", o.number), input, id);
+  await notifyReceipt({ order: o }, input);
 }

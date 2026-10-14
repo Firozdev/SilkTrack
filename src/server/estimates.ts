@@ -8,7 +8,8 @@ import { calcQuotation } from "@/lib/quotation";
 import { BD_TZ, today } from "@/lib/dates";
 import { docNo } from "@/lib/format";
 import { logChanges, diffFields } from "@/lib/audit";
-import { notifyRoles, queueCustomerMessage } from "@/lib/notify";
+import { queueCustomerMessage } from "@/lib/notify";
+import { notify } from "./notify";
 import { rateForConversion } from "./rates";
 import { quoteBreakdown } from "./quote-breakdown";
 import { applyCustomerApproval, applyCustomerRejection, markCustomerApproved, markRejected } from "./requests";
@@ -164,12 +165,7 @@ export async function submitQuotation(actor: Actor, id: string) {
   const e = await loadEstimate(id);
   if (e.status !== "DRAFT") throw new UserError("Only drafts can be submitted");
   await prisma.$transaction((tx) => setStatus(tx, id, e.status, "SUBMITTED_BY_CHINA", actor.id, { submittedAt: new Date() }));
-  await notifyRoles(["CS", "ADMIN"], {
-    type: "ESTIMATE_READY",
-    title: `Quotation ready: ${docNo("order", e.order.number)}`,
-    body: `${docNo("estimate", e.number)} v${e.version} – total ¥${e.totalRmb.toFixed(2)}. Add selling prices and send to the customer, or request a sample.`,
-    orderId: e.orderId,
-  });
+  await notify("QUOTE_SUBMITTED", { order: e.order }, { estimate: `${docNo("estimate", e.number)} v${e.version}`, totalRmb: e.totalRmb.toFixed(2) }, { userId: actor.id });
 }
 
 /** Selling price per line (BDT). BD always; China users only with canSetSellingPrice. */
@@ -237,6 +233,7 @@ export async function sendQuotationToCustomer(actor: Actor, id: string) {
     }. Valid until ${e.validUntil.toISOString().slice(0, 10)}.`,
     orderId: e.orderId,
   });
+  await notify("QUOTE_SENT", { order: e.order, customerId: e.order.customerId }, { validUntil: e.validUntil.toISOString().slice(0, 10) }, { userId: actor.id });
 }
 
 /** Customer accepted: order goes to the China purchase queue. Expired quotations must be re-priced first. */
@@ -274,12 +271,7 @@ export async function decidePortalQuotation(customerId: string, id: string, deci
     await prisma.$transaction((tx) => setStatus(tx, id, e.status, "REJECTED", null, { decidedAt: new Date(), decidedInPortal: true, notes: reason ? `${e.notes ? `${e.notes}\n` : ""}Declined by customer: ${reason}` : e.notes }));
     await applyCustomerRejection(e.orderId, null, `Customer declined quotation ${ref} in the portal${reason ? `: ${reason}` : ""}`);
   }
-  await notifyRoles(["CS", "ADMIN"], {
-    type: decision === "APPROVE" ? "PORTAL_QUOTE_APPROVED" : "PORTAL_QUOTE_DECLINED",
-    title: `${decision === "APPROVE" ? "Quote approved" : "Quote declined"} by customer: ${docNo("order", e.order.number)}`,
-    body: decision === "APPROVE" ? `${ref} – collect the advance payment.` : `${ref}${reason ? ` – ${reason}` : ""}`,
-    orderId: e.orderId,
-  });
+  await notify("QUOTE_DECIDED", { order: e.order }, { approved: decision === "APPROVE", estimate: ref, reason });
 }
 
 /**
@@ -351,7 +343,7 @@ export async function reviseQuotation(actor: Actor, id: string, reason?: string)
     return n;
   });
   if (actor.role !== "PURCHASE") {
-    await notifyRoles(["PURCHASE"], { type: "ESTIMATE_REVISION", title: `Quotation revision requested: ${docNo("order", e.order.number)}`, body: reason ?? `Update ${docNo("estimate", e.number)} (now v${next.version}).`, orderId: e.orderId });
+    await notify("QUOTE_REVISION_REQUESTED", { order: e.order }, { reason, estimate: `${docNo("estimate", e.number)} (now v${next.version})` }, { userId: actor.id });
   }
   return next;
 }

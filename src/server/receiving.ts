@@ -6,7 +6,7 @@ import { UserError } from "@/lib/action";
 import { D, cbmOf, sum } from "@/lib/money";
 import { docNo } from "@/lib/format";
 import { logChanges } from "@/lib/audit";
-import { notifyRoles } from "@/lib/notify";
+import { notify } from "./notify";
 import { setLineStatus } from "./status";
 import { allocateFreight, assignToShipment, capacityWarning, recalcTotals, suggestShipment } from "./shipments";
 import type { Actor } from "./actor";
@@ -140,8 +140,9 @@ export async function receiveParcel(actor: Actor, input: ReceiveInput, now = new
       issues.push({ type: ISSUE_FOR[input.condition], description: `Parcel condition: ${input.condition.replace("_", " ").toLowerCase()}` });
     }
     const orderIds = await tx.orderLine.findMany({ where: { id: { in: orderLineIds } }, select: { id: true, orderId: true } });
+    const created: { id: string; number: number; orderId: string | null; type: IssueType; description: string }[] = [];
     for (const i of issues) {
-      await tx.issue.create({
+      const issue = await tx.issue.create({
         data: {
           type: i.type,
           source: "CHINA_RECEIVING",
@@ -153,6 +154,7 @@ export async function receiveParcel(actor: Actor, input: ReceiveInput, now = new
           assignedToId: so.purchasedById,
         },
       });
+      created.push(issue);
     }
 
     let shipment = null;
@@ -160,18 +162,19 @@ export async function receiveParcel(actor: Actor, input: ReceiveInput, now = new
       const target = input.shipmentId === "auto" ? await suggestShipment(tx, input.shippingMethod, now) : { id: input.shipmentId };
       shipment = await assignToShipment(tx, actor.id, rec.id, target.id, now);
     }
-    return { rec, shipment, issueCount: issues.length, orderIds: [...new Set(orderIds.map((o) => o.orderId))] };
+    return { rec, shipment, issues: created, orderIds: [...new Set(orderIds.map((o) => o.orderId))] };
   });
 
-  const nums = await prisma.order.findMany({ where: { id: { in: result.orderIds } }, select: { number: true } });
-  await notifyRoles(["CS"], {
-    type: "RECEIVED_IN_CHINA",
-    title: `Received in China: ${nums.map((n) => docNo("order", n.number)).join(", ")}`,
-    body: `${docNo("receiving", result.rec.number)}${result.shipment ? ` → ${result.shipment.code}` : ""}`,
-    orderId: result.orderIds[0],
-  });
-  if (result.issueCount) {
-    await notifyRoles(["CS", "PURCHASE", "ADMIN"], { type: "ISSUE_REPORTED", title: `Issue at China warehouse: ${docNo("receiving", result.rec.number)}`, body: `${result.issueCount} problem(s) reported on receiving.`, orderId: result.orderIds[0] }, actor.id);
+  const orders = await prisma.order.findMany({ where: { id: { in: result.orderIds } }, select: { id: true, number: true, customerId: true } });
+  const cause = { userId: actor.id };
+  for (const o of orders) {
+    const about = { order: o, customerId: o.customerId };
+    await notify("RECEIVED_CHINA", about, { detail: `${docNo("receiving", result.rec.number)}${result.shipment ? ` → ${result.shipment.code}` : ""}` }, cause);
+    if (result.shipment) await notify("ASSIGNED_TO_SHIPMENT", { ...about, shipment: result.shipment }, { shipment: result.shipment.code }, cause);
+  }
+  for (const i of result.issues) {
+    const o = orders.find((x) => x.id === i.orderId);
+    await notify("ISSUE_REPORTED", { issue: i, order: o, customerId: o?.customerId, ref: o ? docNo("order", o.number) : docNo("issue", i.number), staffLink: `/issues?id=${i.id}` }, { problem: i.description, where: "China warehouse" }, cause);
   }
   return { receiving: result.rec, shipment: result.shipment, warning: result.shipment ? capacityWarning(result.shipment) : null };
 }

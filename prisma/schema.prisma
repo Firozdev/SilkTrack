@@ -351,6 +351,8 @@ model User {
   canSetSellingPrice Boolean   @default(false)
   /// IANA zone, e.g. Asia/Dhaka (BD team) or Asia/Shanghai (China team).
   timezone           String    @default("Asia/Dhaka")
+  /// Play a sound when a new notification arrives.
+  notifySound        Boolean   @default(true)
   lastLoginAt        DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -455,6 +457,8 @@ model Customer {
   paymentSubmissions PaymentSubmission[]
   notifications      Notification[]
 
+  notificationEvents NotificationEvent[]
+
   @@index([phone])
   @@index([agentAccountId])
 }
@@ -511,6 +515,8 @@ model Order {
   claims             Claim[]
   notifications      Notification[]
   paymentSubmissions PaymentSubmission[]
+
+  notificationEvents NotificationEvent[]
 
   @@index([status])
   @@index([requestStatus])
@@ -838,6 +844,8 @@ model Sample {
   attachments        Attachment[]
   paymentSubmissions PaymentSubmission[]
 
+  notificationEvents NotificationEvent[]
+
   @@index([status])
   @@index([orderId])
 }
@@ -988,6 +996,8 @@ model ShippingOrder {
   payments           Payment[]
   attachments        Attachment[]
   paymentSubmissions PaymentSubmission[]
+
+  notificationEvents NotificationEvent[]
 
   @@index([status])
   @@index([customerId])
@@ -1238,6 +1248,8 @@ model Issue {
   attachments Attachment[]
   claims      Claim[]
 
+  notificationEvents NotificationEvent[]
+
   @@index([status])
 }
 
@@ -1290,6 +1302,8 @@ model Shipment {
   shippingOrders ShippingOrder[]
   bdReceivings   BdReceivingItem[]
   trackingEvents TrackingEvent[]
+
+  notificationEvents NotificationEvent[]
 
   @@unique([year, weekNumber, method])
   @@index([status])
@@ -1439,6 +1453,8 @@ model PortalAccount {
   passwordHash String
   status       PortalAccountStatus @default(PENDING)
   kind         PortalAccountKind   @default(CUSTOMER)
+  /// Play a sound when a new notification arrives.
+  notifySound  Boolean             @default(true)
   /// Portal language, also used for messages to this customer.
   locale       Locale              @default(EN)
   /// Set by staff on approval (existing customer or one created from the sign-up). Null for agents.
@@ -1470,6 +1486,7 @@ model PortalAccount {
   agentCustomers     Customer[]          @relation("AgentCustomers")
   placedOrders       Order[]             @relation("OrderPlacedBy")
   placedShipping     ShippingOrder[]     @relation("ShippingOrderPlacedBy")
+  notifications      Notification[]
 
   @@index([status])
   @@index([customerId])
@@ -1545,26 +1562,69 @@ model PaymentSubmission {
 // ───────────────────────── Cross-cutting ─────────────────────────
 
 /// In-app notifications for staff, and SMS / WhatsApp / email to customers.
+/// One thing that happened (e.g. "QA failed on SHO-000012"). Each recipient
+/// gets a Notification row; record pages list their events as history.
+model NotificationEvent {
+  id              String         @id @default(cuid())
+  /// Event key from src/lib/notifications/rules.ts, e.g. QA_FAILED.
+  type            String
+  /// Values for the message template (record numbers, codes, names…).
+  data            Json
+  /// The record it is about (one of these).
+  orderId         String?
+  order           Order?         @relation(fields: [orderId], references: [id])
+  shippingOrderId String?
+  shippingOrder   ShippingOrder? @relation(fields: [shippingOrderId], references: [id])
+  sampleId        String?
+  sample          Sample?        @relation(fields: [sampleId], references: [id])
+  shipmentId      String?
+  shipment        Shipment?      @relation(fields: [shipmentId], references: [id])
+  issueId         String?
+  issue           Issue?         @relation(fields: [issueId], references: [id])
+  /// Customer side: whose order (their login and agent are notified).
+  customerId      String?
+  customer        Customer?      @relation(fields: [customerId], references: [id])
+  /// Who caused it – never notified about their own action.
+  actorUserId     String?
+  actorAccountId  String?
+  createdAt       DateTime       @default(now())
+
+  notifications Notification[]
+
+  @@index([orderId])
+  @@index([shippingOrderId])
+  @@index([sampleId])
+}
+
 model Notification {
-  id         String              @id @default(cuid())
-  channel    NotificationChannel
+  id              String              @id @default(cuid())
+  channel         NotificationChannel
   /// e.g. RATE_MISSING, ESTIMATE_READY, ARRIVED_BD.
-  type       String
-  title      String
-  body       String
-  status     NotificationStatus  @default(PENDING)
-  userId     String?
-  user       User?               @relation(fields: [userId], references: [id])
-  customerId String?
-  customer   Customer?           @relation(fields: [customerId], references: [id])
-  orderId    String?
-  order      Order?              @relation(fields: [orderId], references: [id])
-  error      String?
-  sentAt     DateTime?
-  readAt     DateTime?
-  createdAt  DateTime            @default(now())
+  type            String
+  title           String
+  body            String
+  status          NotificationStatus  @default(PENDING)
+  userId          String?
+  user            User?               @relation(fields: [userId], references: [id])
+  customerId      String?
+  customer        Customer?           @relation(fields: [customerId], references: [id])
+  orderId         String?
+  order           Order?              @relation(fields: [orderId], references: [id])
+  eventId         String?
+  event           NotificationEvent?  @relation(fields: [eventId], references: [id])
+  /// Recipient when it is a customer or agent portal login.
+  portalAccountId String?
+  portalAccount   PortalAccount?      @relation(fields: [portalAccountId], references: [id])
+  /// Page to open for this recipient (staff or portal URL).
+  link            String?
+  error           String?
+  sentAt          DateTime?
+  readAt          DateTime?
+  createdAt       DateTime            @default(now())
 
   @@index([userId, status])
+  @@index([userId, readAt])
+  @@index([portalAccountId, readAt])
 }
 
 /// Who changed price, rate, weight, CBM or status, and when.
