@@ -6,7 +6,8 @@ import { Alert, Attachments, Card, Dl, Field, inputCls } from "@/components/ui";
 import { BD_TZ, fmtDateTime, fmtDay } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
-import { portalShippingOrder } from "@/server/portal";
+import { portalShipments, portalShippingOrder } from "@/server/portal";
+import { ShipmentBox } from "../../shipment-box";
 import { ownerOf } from "@/server/portal-access";
 import { portalTrackingAction } from "../../../actions";
 import { fill } from "../../../i18n";
@@ -28,7 +29,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
   const cid = await ownerOf(acc, "shipping", id);
   const s = cid ? await portalShippingOrder(cid, id) : null;
   if (!cid || !s) notFound();
-  const history = await recordHistory({ shippingOrderId: s.id }, "customer");
+  const [history, shipping] = await Promise.all([recordHistory({ shippingOrderId: s.id }, "customer"), portalShipments(cid, { shippingOrderId: s.id })]);
   const [due, rates] = await Promise.all([amountDue(cid, { kind: "shipping", id: s.id }), rateCardFor(s.shippingRateId)]);
   const air = s.shippingMethod === "AIR";
   const money = (label: string, v: { gt(n: number): boolean } | null, text: string): [string, string][] => (v?.gt(0) ? [[label, text]] : []);
@@ -103,6 +104,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
           <FilesCard t={t} files={s.attachments} kind="shipping" id={s.id} canUpload={!["DELIVERED", "CANCELLED"].includes(s.status)} />
         </div>
         <div className="space-y-5">
+          {shipping && s.status !== "CANCELLED" && <ShipmentBox t={t} lang={lang} data={shipping} showProducts={false} />}
           <Card title={t.sizeShipping}>
             <Dl
               items={[

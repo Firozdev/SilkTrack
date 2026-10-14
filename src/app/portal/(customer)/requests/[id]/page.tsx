@@ -6,7 +6,8 @@ import { A, Alert, Attachments, Card, Dl, Table, inputCls, tdCls } from "@/compo
 import { BD_TZ, fmtDateTime, fmtDay, today } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
-import { portalOrder } from "@/server/portal";
+import { portalOrder, portalShipments } from "@/server/portal";
+import { ShipmentBox } from "../../shipment-box";
 import { ownerOf } from "@/server/portal-access";
 import { portalQuoteAction } from "../../../actions";
 import { fill } from "../../../i18n";
@@ -26,7 +27,7 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
   const cid = await ownerOf(acc, "order", id);
   const o = cid ? await portalOrder(cid, id) : null;
   if (!cid || !o) notFound();
-  const history = await recordHistory({ orderId: o.id }, "customer");
+  const [history, shipping] = await Promise.all([recordHistory({ orderId: o.id }, "customer"), portalShipments(cid, { orderId: o.id })]);
   const due = await amountDue(cid, { kind: "order", id: o.id });
   const q = o.quote;
   const awaiting = q?.status === "SENT_TO_CUSTOMER";
@@ -152,6 +153,7 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
         note={o.customerNote}
         problem={o.customerReportedProblem}
       />
+      {shipping && o.status !== "CANCELLED" && <ShipmentBox t={t} lang={lang} data={shipping} showProducts={o.lines.length > 1} />}
       <FilesCard t={t} files={files} kind="order" id={o.id} canUpload={!["CANCELLED", "DELIVERED"].includes(o.status)} />
 
       {(o.invoices.length > 0 || o.payments.length > 0) && (

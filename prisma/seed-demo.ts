@@ -63,6 +63,22 @@ async function main() {
 
   const issue = await prisma.issue.create({ data: { type: "DAMAGED", source: "CHINA_RECEIVING", orderId: buyStaff.id, description: "Demo: carton arrived crushed, one chair leg broken", reportedById: admin.id } });
 
+  // The demo customer's Ship for Me order travels in this week's air shipment (Shipment box in the portal).
+  const now = new Date();
+  const ymd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const dow = ymd.getUTCDay() || 7;
+  const monday = new Date(ymd.getTime() - (dow - 1) * 86_400_000);
+  const thursday = new Date(monday.getTime() + 3 * 86_400_000);
+  const year = thursday.getUTCFullYear();
+  const week = Math.ceil(((thursday.getTime() - Date.UTC(year, 0, 1)) / 86_400_000 + 1) / 7);
+  const plusDays = (n: number) => new Date(monday.getTime() + n * 86_400_000);
+  const shipment = await prisma.shipment.upsert({
+    where: { year_weekNumber_method: { year, weekNumber: week, method: "AIR" } },
+    update: {},
+    create: { code: `SHP-${year}-W${String(week).padStart(2, "0")}-A`, year, weekNumber: week, method: "AIR", status: "OPEN", cutoffDate: plusDays(4), plannedDepartureDate: plusDays(6), etaBd: plusDays(11) },
+  });
+  await prisma.shippingOrder.update({ where: { id: shipPortal.id }, data: { shipmentId: shipment.id, status: "IN_SHIPMENT", receivedChinaAt: new Date(), cartonCount: 1, grossWeightKg: "4.5", cbm: "0.06" } });
+
   // Demo staff for the CS and China roles, then a few unread notifications for every role,
   // built from the same rules and templates the app uses.
   await staffUser("cs.demo@silktrack.test", "Demo CS", "CS", "Asia/Dhaka");
@@ -109,6 +125,7 @@ async function main() {
   console.log(`CS login:    cs.demo@silktrack.test / ${STAFF_PASSWORD}`);
   console.log(`China login: china.demo@silktrack.test / ${STAFF_PASSWORD}`);
   console.log("Every role now has a few unread demo notifications.");
+  console.log(`Demo customer's ${"SHO-" + String(shipPortal.number).padStart(6, "0")} is in shipment ${shipment.code}; their Buy for Me requests are not in a shipment yet.`);
 }
 
 main()

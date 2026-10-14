@@ -2,6 +2,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { D, sum, type Decimal } from "@/lib/money";
+import { isoWeekStart } from "@/lib/dates";
 import { customerLedger } from "./ledger";
 import { quoteBreakdown } from "./quote-breakdown";
 
@@ -232,4 +233,79 @@ export async function portalSample(customerId: string, id: string) {
   const paid = paidOf(s.payments);
   const balance = D(s.totalBdt).sub(paid);
   return { ...s, paid, balance: balance.isNeg() ? D(0) : balance };
+}
+
+// ───────────────────────── Shipment box ─────────────────────────
+
+/** Only what a customer may see of a shipment: never freight, forwarder, tracking or other customers' goods. */
+const shipmentPublic = { id: true, code: true, year: true, weekNumber: true, status: true, plannedDepartureDate: true, departedAt: true, etaBd: true, arrivedAt: true } as const;
+type ShipmentRow = Prisma.ShipmentGetPayload<{ select: typeof shipmentPublic }>;
+
+export type PortalShipment = {
+  code: string;
+  status: string;
+  /** Monday of the shipment's week. */
+  startDate: Date;
+  /** Actual departure once it left, else the planned date. */
+  departure: { date: Date | null; planned: boolean };
+  /** Actual arrival in Bangladesh once it arrived, else the estimate. */
+  bdReceive: { date: Date | null; actual: boolean };
+  /** Products of this order in the shipment. */
+  products: string[];
+};
+
+function toPublic(s: ShipmentRow, products: string[]): PortalShipment {
+  return {
+    code: s.code,
+    status: s.status,
+    startDate: isoWeekStart(s.year, s.weekNumber),
+    departure: s.departedAt ? { date: s.departedAt, planned: false } : { date: s.plannedDepartureDate, planned: true },
+    bdReceive: s.arrivedAt ? { date: s.arrivedAt, actual: true } : { date: s.etaBd, actual: false },
+    products,
+  };
+}
+
+/**
+ * The shipment(s) an order travels in, read live from the shipment record.
+ * Scoped to the customer: someone else's order returns null. A Buy for Me
+ * order can be split when its products reach China at different times, so it
+ * may have several shipments plus products not assigned yet.
+ */
+export async function portalShipments(customerId: string, ref: { orderId: string } | { shippingOrderId: string }): Promise<{ shipments: PortalShipment[]; unassigned: string[] } | null> {
+  if ("shippingOrderId" in ref) {
+    const s = await prisma.shippingOrder.findFirst({ where: { id: ref.shippingOrderId, customerId }, select: { status: true, shipment: { select: shipmentPublic }, items: { orderBy: { lineNo: "asc" }, select: { productName: true } } } });
+    if (!s) return null;
+    const names = s.items.map((i) => i.productName);
+    if (s.status === "CANCELLED") return { shipments: [], unassigned: [] };
+    return s.shipment ? { shipments: [toPublic(s.shipment, names)], unassigned: [] } : { shipments: [], unassigned: names };
+  }
+  const o = await prisma.order.findFirst({
+    where: { id: ref.orderId, customerId },
+    select: {
+      status: true,
+      lines: {
+        where: { status: { not: "CANCELLED" } },
+        orderBy: { lineNo: "asc" },
+        select: {
+          productName: true,
+          // A repacked parcel ships as the carton set it was merged into.
+          receivingLines: { select: { receiving: { select: { status: true, shipment: { select: shipmentPublic }, repackedInto: { select: { shipment: { select: shipmentPublic } } } } } } },
+        },
+      },
+    },
+  });
+  if (!o) return null;
+  const byId = new Map<string, { s: ShipmentRow; products: Set<string> }>();
+  const unassigned: string[] = [];
+  for (const l of o.lines) {
+    const shipments = l.receivingLines.map((r) => (r.receiving.status === "REPACKED" ? r.receiving.repackedInto?.shipment : r.receiving.shipment)).filter((s): s is ShipmentRow => !!s);
+    if (!shipments.length) unassigned.push(l.productName);
+    for (const s of shipments) {
+      const e = byId.get(s.id) ?? { s, products: new Set<string>() };
+      e.products.add(l.productName);
+      byId.set(s.id, e);
+    }
+  }
+  const shipments = [...byId.values()].map((e) => toPublic(e.s, [...e.products])).sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+  return { shipments, unassigned };
 }
