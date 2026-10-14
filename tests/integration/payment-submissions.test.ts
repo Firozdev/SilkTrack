@@ -6,7 +6,7 @@ import { approveAccount, signUp } from "@/server/portal-auth";
 import { portalAttachment } from "@/server/portal";
 import { amountDue, approveSubmission, duplicateReferences, rejectSubmission, submitPayment } from "@/server/payment-submissions";
 import { confirmReceipt } from "@/server/receipts";
-import { createPortalRequest, sendToChina } from "@/server/requests";
+import { createPortalRequest } from "@/server/requests";
 import { saveQuotation, setSellingPrices, submitQuotation, sendQuotationToCustomer, decidePortalQuotation } from "@/server/estimates";
 import { assignShippingOrder, createPortalShippingOrder, dispatchShipping, invoiceShipping, receiveShippingBd, receiveShippingChina, recordShippingPayment } from "@/server/shipping-orders";
 import type { Actor } from "@/server/actor";
@@ -101,7 +101,6 @@ describe("Customer-reported payments", () => {
   it("an advance reported on an approved request releases it for purchase once approved", async () => {
     const k = await customer("01711000000");
     const { order } = await createPortalRequest(k.customerId, { shippingMethod: "AIR", lines: [{ productName: "Lamp", quantity: 10, links: [] }] });
-    await sendToChina(cs, order.id);
     const lines = await prisma.orderLine.findMany({ where: { orderId: order.id } });
     const e = await saveQuotation(china, order.id, { shippingMethod: "AIR", shippingRatePerKgRmb: "40", validUntil: new Date("2099-01-01T00:00:00Z"), lines: [{ orderLineId: lines[0].id, unitPriceRmb: "12.5", unitWeightKg: "0.3" }] });
     await submitQuotation(china, e.id);

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { BD_TZ, toYmd, today } from "@/lib/dates";
 import { approveAccount, signUp } from "@/server/portal-auth";
-import { cancelPortalRequest, createPortalRequest, sendToChina, updatePortalRequest } from "@/server/requests";
+import { cancelPortalRequest, createPortalRequest, updatePortalRequest } from "@/server/requests";
 import { saveQuotation } from "@/server/estimates";
 import { cancelPortalShippingOrder, createPortalShippingOrder, receiveShippingChina, updatePortalShippingOrder } from "@/server/shipping-orders";
 import { saveItemFiles } from "@/server/line-files";
@@ -64,10 +64,9 @@ describe("Customer edits and cancels in the portal", () => {
     expect(await prisma.orderLine.count({ where: { id: shade.id } })).toBe(0);
     expect(await prisma.notification.count({ where: { type: "PORTAL_REQUEST_EDITED", userId: cs.id } })).toBe(1);
 
-    // Sent to China, no quote yet → still editable, and China is told
-    await sendToChina(cs, order.id);
+    // Already with China (sent automatically), no quote yet → still editable, and China is told each time
     await updatePortalRequest(k.customerId, order.id, { ...edit, lines: [{ id: lamp.id, productName: "Lamp XL", quantity: 4, links: [] }] });
-    expect(await prisma.notification.count({ where: { type: "PORTAL_REQUEST_EDITED", userId: china.id } })).toBe(1);
+    expect(await prisma.notification.count({ where: { type: "PORTAL_REQUEST_EDITED", userId: china.id } })).toBe(2);
 
     // China starts the quotation → locked
     await saveQuotation(china, order.id, { shippingMethod: "SEA", shippingRatePerCbmRmb: "1000", validUntil: new Date("2099-01-01T00:00:00Z"), lines: [{ orderLineId: lamp.id, unitPriceRmb: "10" }] });

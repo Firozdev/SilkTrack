@@ -14,9 +14,12 @@ function target(s: { order: { id: string; number: number } | null; shippingOrder
   return { href: `/requests/${s.order!.id}`, label: docNo("order", s.order!.number), kind: "order" as const, id: s.order!.id };
 }
 
-export default async function PaymentsToVerifyPage() {
+export default async function PaymentsToVerifyPage({ searchParams }: PageProps<"/payments-to-verify">) {
   const user = await requirePagePermission("payment:record");
-  const [pending, recent] = await Promise.all([listSubmissions({ status: "PENDING" }), listSubmissions({ status: { not: "PENDING" } }, 50)]);
+  const sp = await searchParams;
+  // ?id= shows one report (linked from the dashboard), wherever it is now.
+  const only = typeof sp.id === "string" ? { id: sp.id } : {};
+  const [pending, recent] = await Promise.all([listSubmissions({ ...only, status: "PENDING" }), listSubmissions({ ...only, status: { not: "PENDING" } }, 50)]);
   const extra = await Promise.all(
     pending.map(async (s) => {
       const t = target(s);
@@ -27,7 +30,17 @@ export default async function PaymentsToVerifyPage() {
 
   return (
     <>
-      <PageHeader title="Payments to verify" subtitle="Payments customers reported in the portal. Check each against the bKash / Nagad / bank statement before approving." />
+      <PageHeader
+        title="Payments to verify"
+        subtitle="Payments customers reported in the portal. Check each against the bKash / Nagad / bank statement before approving."
+        actions={
+          only.id && (
+            <a href="/payments-to-verify" className={btnCls}>
+              Show all
+            </a>
+          )
+        }
+      />
       <Card title={`Waiting (${pending.length})`} className="mb-5">
         {pending.length === 0 && <p className="text-sm text-gray-400">Nothing to verify.</p>}
         <div className="space-y-4">

@@ -108,11 +108,11 @@ export type PortalRequestInput = Omit<RequestInput, "customer" | "type" | "prior
 
 /**
  * A customer submits a request in the portal. No duplicate-link check (it would
- * reveal other customers' orders); CS sees it as a New request.
+ * reveal other customers' orders); it goes straight to the China team like a staff request.
  */
 export async function createPortalRequest(customerId: string, input: PortalRequestInput) {
   const res = await insertRequest({ ...input, customer: { id: customerId, name: "", phone: "", address: "" }, allowDuplicates: true }, { source: "PORTAL", customerId });
-  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_REQUEST", title: `Portal request: ${docNo("order", res.order.number)}`, body: `${res.order.lines.length} product(s) from a customer – review and send to China.`, orderId: res.order.id });
+  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_REQUEST", title: `Portal request: ${docNo("order", res.order.number)}`, body: `${res.order.lines.length} product(s) from a customer – sent to the China team for a quotation.`, orderId: res.order.id });
   return res;
 }
 
@@ -146,6 +146,8 @@ async function insertRequest(input: RequestInput, by: { actorId: string; source:
         customerId,
         source: by.source,
         createdById: actorId,
+        // New requests go straight to the China team for a quotation (decision 2026-10-14).
+        requestStatus: "SENT_TO_CHINA",
         type,
         typeOverridden: type !== suggested,
         shippingMethod: input.shippingMethod,
@@ -170,9 +172,21 @@ async function insertRequest(input: RequestInput, by: { actorId: string; source:
       include: { lines: { orderBy: { lineNo: "asc" } } },
     });
     await logChanges(tx, { entityType: "Order", entityId: order.id, userId: actorId, action: "CREATE" });
+    // Keep the hand-off to China visible in the status history.
+    await logChanges(tx, { entityType: "Order", entityId: order.id, userId: actorId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: "NEW", newValue: "SENT_TO_CHINA" }] });
     return order;
   });
+  await notifyChinaTeam(order);
   return { order, suggestedType: suggested };
+}
+
+async function notifyChinaTeam(order: { id: string; number: number; type: OrderType; shippingMethod: string; lines: unknown[] }) {
+  await notifyRoles(["PURCHASE"], {
+    type: order.type === "BULK" ? "ESTIMATE_REQUESTED" : "NEW_REQUEST",
+    title: order.type === "BULK" ? `Estimate requested: ${docNo("order", order.number)}` : `New request: ${docNo("order", order.number)}`,
+    body: `${order.lines.length} product(s), ${order.shippingMethod.toLowerCase()} shipping.`,
+    orderId: order.id,
+  });
 }
 
 async function loadOrder(orderId: string) {
@@ -186,18 +200,16 @@ async function setRequestStatus(tx: Prisma.TransactionClient, orderId: string, f
   await logChanges(tx, { entityType: "Order", entityId: orderId, userId: actorId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: from, newValue: to as string }] });
 }
 
-/** CS hands the request to the China team (price check / estimate). */
+/**
+ * CS hands the request to the China team (price check / estimate). New requests
+ * are sent automatically; this is only for ones created before that, still New.
+ */
 export async function sendToChina(actor: Actor, orderId: string) {
   assertCan(actor.role, "request:edit");
   const order = await loadOrder(orderId);
   if (order.requestStatus !== "NEW") throw new UserError("Only new requests can be sent to China");
   await prisma.$transaction((tx) => setRequestStatus(tx, orderId, order.requestStatus, "SENT_TO_CHINA", actor.id));
-  await notifyRoles(["PURCHASE"], {
-    type: order.type === "BULK" ? "ESTIMATE_REQUESTED" : "NEW_REQUEST",
-    title: order.type === "BULK" ? `Estimate requested: ${docNo("order", order.number)}` : `New request: ${docNo("order", order.number)}`,
-    body: `${order.lines.length} product(s), ${order.shippingMethod.toLowerCase()} shipping.`,
-    orderId,
-  });
+  await notifyChinaTeam(order);
 }
 
 /** Customer accepted the quote. Purchase is released once an advance is recorded. */
@@ -357,6 +369,16 @@ export async function updateRequestHeader(actor: Actor, orderId: string, input: 
 export function isReleasedForPurchase(order: { requestStatus: string; payments: { type: string; amountBdt: Prisma.Decimal }[] }) {
   return order.requestStatus === "CUSTOMER_APPROVED" && hasAdvance(order.payments);
 }
+
+/**
+ * Buy for Me requests still waiting for the China team's quotation (including
+ * any left New from before requests were sent to China automatically).
+ */
+export const awaitingQuoteWhere: Prisma.OrderWhereInput = {
+  requestStatus: { in: ["NEW", "SENT_TO_CHINA"] },
+  status: { notIn: ["ON_HOLD", "CANCELLED"] },
+  estimates: { none: { status: { in: ["SUBMITTED_BY_CHINA", "REVIEWED_BY_BD", "SENT_TO_CUSTOMER"] } } },
+};
 
 /** Requests waiting on the China team, and upfront-payment requests waiting on BD. */
 export async function chinaInbox() {

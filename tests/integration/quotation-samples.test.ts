@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError } from "@/lib/permissions";
 import { BD_TZ, toYmd, today } from "@/lib/dates";
-import { createRequest, sendToChina } from "@/server/requests";
+import { createRequest } from "@/server/requests";
 import { approveQuotation, reviseQuotation, saveQuotation, sendQuotationToCustomer, setSellingPrices, submitQuotation, type QuotationInput } from "@/server/estimates";
 import { cancelSample, deliverSample, invoiceSample, purchaseSample, receiveSampleBd, recordSamplePayment, requestSample, shipSample } from "@/server/samples";
 import { purchaseQueue } from "@/server/purchasing";
@@ -21,7 +21,6 @@ async function sentRequest() {
       { productName: "Shade", quantity: 4, links: [] },
     ],
   });
-  await sendToChina(cs, order.id);
   return order;
 }
 

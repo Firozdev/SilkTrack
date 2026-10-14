@@ -1,10 +1,10 @@
-import { Meter, StatTile, StatusBars, TileRow } from "@/components/dashboard";
+import { InboxPanel, Meter, StatTile, StatusBars, TileRow } from "@/components/dashboard";
 import { A, Badge, Card, PageHeader, Table, tdCls } from "@/components/ui";
-import { fmtDay } from "@/lib/dates";
+import { fmtDateTime, fmtDay } from "@/lib/dates";
 import { docNo, fmtBdt } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
-import { bdDashboard, chinaDashboard, managementDashboard, ordersByStatus } from "@/server/dashboard";
+import { adminInbox, bdDashboard, chinaDashboard, managementDashboard, ordersByStatus } from "@/server/dashboard";
 import { getCurrentRate } from "@/server/rates";
 
 const days = (n: number | null) => (n === null ? "—" : `${n.toFixed(1)} days`);
@@ -15,7 +15,8 @@ export default async function Dashboard() {
   const showBd = user.role === "CS" || isAdmin;
   const showChina = user.role === "PURCHASE" || isAdmin;
 
-  const [statusRows, bd, china, mgmt, { isToday }] = await Promise.all([
+  const [inbox, statusRows, bd, china, mgmt, { isToday }] = await Promise.all([
+    can(user.role, "dashboard:adminInbox") ? adminInbox(user) : null,
     ordersByStatus(),
     showBd ? bdDashboard() : null,
     showChina ? chinaDashboard() : null,
@@ -26,6 +27,25 @@ export default async function Dashboard() {
   return (
     <>
       <PageHeader title={`Hello, ${user.name}`} subtitle={isAdmin ? "Management, Bangladesh and China overview" : user.role === "CS" ? "Bangladesh team dashboard" : "China team dashboard"} />
+
+      {inbox && (
+        <section className="mb-6 space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">New Requests</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {inbox.map((p) => (
+              <InboxPanel
+                key={p.key}
+                title={p.title}
+                hint={p.hint}
+                href={p.href}
+                count={p.count}
+                items={p.items.map((i) => ({ ...i, when: fmtDateTime(i.at, user.timezone) }))}
+                empty="Nothing new."
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {mgmt && (
         <section className="mb-6 space-y-3">

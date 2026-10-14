@@ -76,3 +76,60 @@ export function StatusBars({ rows }: { rows: { status: string; count: number }[]
     </ul>
   );
 }
+
+/**
+ * Inbox panel: header (title + count) links to the full list; each row links
+ * to its own record.
+ */
+export function InboxPanel({
+  title,
+  hint,
+  href,
+  count,
+  items,
+  empty,
+}: {
+  title: string;
+  hint: string;
+  href: string;
+  count: number;
+  items: { id: string; no: string; customer: string | null; when: string; href: string; tag?: string }[];
+  empty: string;
+}) {
+  return (
+    <section className={`flex flex-col rounded-lg border bg-white ${count ? "border-amber-300" : "border-gray-200"}`}>
+      <Link href={href} className="flex items-start justify-between gap-2 rounded-t-lg border-b border-gray-100 px-3 py-2.5 transition hover:bg-blue-50">
+        <span>
+          <span className="block text-sm font-semibold text-gray-800">{title}</span>
+          <span className="block text-xs text-gray-500">{hint}</span>
+        </span>
+        <span className="text-2xl font-semibold tabular-nums text-gray-900">{count}</span>
+      </Link>
+      {items.length === 0 ? (
+        <p className="px-3 py-3 text-sm text-gray-400">{empty}</p>
+      ) : (
+        <ul className="divide-y divide-gray-100">
+          {items.map((i) => (
+            <li key={i.id}>
+              <Link href={i.href} className="block px-3 py-2 text-sm transition hover:bg-blue-50">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium text-blue-700">{i.no}</span>
+                  {i.tag && <span className="text-xs text-gray-500">{humanize(i.tag)}</span>}
+                </span>
+                <span className="flex items-baseline justify-between gap-2 text-xs text-gray-500">
+                  <span className="truncate">{i.customer ?? "—"}</span>
+                  <span className="whitespace-nowrap">{i.when}</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {count > items.length && (
+        <Link href={href} className="mt-auto border-t border-gray-100 px-3 py-2 text-xs font-medium text-blue-700 hover:underline">
+          View all {count} →
+        </Link>
+      )}
+    </section>
+  );
+}

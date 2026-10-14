@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { BD_TZ, toYmd, today } from "@/lib/dates";
-import { createRequest, sendToChina } from "@/server/requests";
+import { createRequest } from "@/server/requests";
 import { saveQuotation, sendQuotationToCustomer, setSellingPrices, setUnitSellingPrices, submitQuotation } from "@/server/estimates";
 import { addShippingRate } from "@/server/shipping-rates";
 import { portalOrder } from "@/server/portal";
@@ -20,7 +20,6 @@ async function sentQuote(shippingMethod: "AIR" | "SEA" = "AIR") {
       { productName: "Shade", quantity: 4, links: [] },
     ],
   });
-  await sendToChina(cs, order.id);
   const e = await saveQuotation(china, order.id, {
     shippingMethod,
     shippingRatePerKgRmb: "40",
@@ -85,7 +84,6 @@ describe("Customer quotation breakdown", () => {
 
   it("CS enters the price per unit: 1500 × 3 pieces shows unit 1500 and amount 4500", async () => {
     const { order } = await createRequest(cs, { customer: { name: "U", phone: "01600000000", address: "x" }, shippingMethod: "AIR", lines: [{ productName: "Bag", quantity: 3, links: [] }] });
-    await sendToChina(cs, order.id);
     const e = await saveQuotation(china, order.id, { shippingMethod: "AIR", shippingRatePerKgRmb: "40", validUntil: new Date("2099-01-01T00:00:00Z"), lines: [{ orderLineId: order.lines[0].id, unitPriceRmb: "50" }] });
     await submitQuotation(china, e.id);
     const [line] = await prisma.estimateLine.findMany({ where: { estimateId: e.id } });

@@ -18,7 +18,7 @@ import {
 } from "@/server/portal-auth";
 import { portalAttachment, portalDashboard, portalOrder, portalSample, portalShippingOrder } from "@/server/portal";
 import { MAX_FILES_PER_UPLOAD, saveAttachments } from "@/lib/uploads";
-import { createPortalRequest, createRequest, sendToChina } from "@/server/requests";
+import { createPortalRequest, createRequest } from "@/server/requests";
 import { createPortalShippingOrder, updatePortalShippingTracking } from "@/server/shipping-orders";
 import { decidePortalQuotation, saveQuotation, setSellingPrices, submitQuotation, sendQuotationToCustomer } from "@/server/estimates";
 import type { Actor } from "@/server/actor";
@@ -151,7 +151,6 @@ describe("Customer portal – data", () => {
     expect(order.createdById).toBeNull();
     expect(await prisma.notification.count({ where: { type: "PORTAL_REQUEST", userId: cs.id } })).toBe(1);
     // Staff carry on as usual
-    await sendToChina(cs, order.id);
 
     const so = await createPortalShippingOrder(a.customerId!, { shippingMethod: "SEA", qaRequested: true, items: [{ productName: "Chairs", quantity: 10 }] });
     expect(so.source).toBe("PORTAL");
@@ -183,7 +182,6 @@ describe("Customer portal – data", () => {
   it("shows only the quote sent to the customer, in BDT – never RMB cost, rate or margin", async () => {
     const a = await activeCustomer("01711000000");
     const { order } = await createPortalRequest(a.customerId!, { shippingMethod: "AIR", lines: [{ productName: "Lamp", quantity: 10, links: [] }] });
-    await sendToChina(cs, order.id);
     const lines = await prisma.orderLine.findMany({ where: { orderId: order.id } });
     const e = await saveQuotation(china, order.id, { shippingMethod: "AIR", shippingRatePerKgRmb: "40", validUntil: new Date("2099-01-01T00:00:00Z"), lines: [{ orderLineId: lines[0].id, unitPriceRmb: "12.5", unitWeightKg: "0.3" }] });
     await submitQuotation(china, e.id);
@@ -211,7 +209,6 @@ describe("Customer portal – files, quote approval", () => {
 
   async function sentQuote(customerId: string, validUntil = new Date("2099-01-01T00:00:00Z")) {
     const { order } = await createPortalRequest(customerId, { shippingMethod: "AIR", lines: [{ productName: "Lamp", quantity: 10, links: [] }] });
-    await sendToChina(cs, order.id);
     const lines = await prisma.orderLine.findMany({ where: { orderId: order.id } });
     const e = await saveQuotation(china, order.id, { shippingMethod: "AIR", shippingRatePerKgRmb: "40", validUntil: new Date("2099-01-01T00:00:00Z"), lines: [{ orderLineId: lines[0].id, unitPriceRmb: "12.5", unitWeightKg: "0.3" }] });
     await submitQuotation(china, e.id);

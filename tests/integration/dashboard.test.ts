@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { BD_TZ, toYmd, today } from "@/lib/dates";
-import { createRequest, recordPayment, sendToChina } from "@/server/requests";
+import { createRequest, recordPayment } from "@/server/requests";
 import { createPurchase, requestUpfrontPayment } from "@/server/purchasing";
 import { bdDashboard, chinaDashboard, managementDashboard, ordersByStatus } from "@/server/dashboard";
 import type { Actor } from "@/server/actor";
@@ -25,18 +25,18 @@ describe("dashboards", () => {
   });
 
   it("counts the pipeline for BD and China", async () => {
+    // New requests go straight to China.
     const { order: fresh } = await createRequest(cs, { customer: { name: "N", phone: "0100", address: "x" }, shippingMethod: "AIR", lines: [{ productName: "A", quantity: 1, links: [] }] });
-    const sent = (await createRequest(cs, { customer: { name: "S", phone: "0101", address: "x" }, shippingMethod: "AIR", lines: [{ productName: "B", quantity: 1, links: [] }] })).order;
-    await sendToChina(cs, sent.id);
+    await createRequest(cs, { customer: { name: "S", phone: "0101", address: "x" }, shippingMethod: "AIR", lines: [{ productName: "B", quantity: 1, links: [] }] });
     const a = await approved("0102");
     const b = await approved("0103");
     await requestUpfrontPayment(china, a.id);
     await recordPayment(cs, b.id, { type: "ADVANCE", amountBdt: "500", method: "CASH" });
 
     const bd = await bdDashboard();
-    expect(bd).toMatchObject({ newRequests: 1, sentToChina: 1, quotationsToReview: 0, quoted: 0, upfrontRequested: 1 });
+    expect(bd).toMatchObject({ newRequests: 0, sentToChina: 2, quotationsToReview: 0, quoted: 0, upfrontRequested: 1 });
     const cn = await chinaDashboard();
-    expect(cn).toMatchObject({ toPrice: 1, readyToBuy: 1, needPaymentRequest: 0, waitingForPayment: 1 });
+    expect(cn).toMatchObject({ toPrice: 2, readyToBuy: 1, needPaymentRequest: 0, waitingForPayment: 1 });
 
     const rows = await ordersByStatus();
     expect(rows.find((r) => r.status === "REQUESTED")?.count).toBe(2);

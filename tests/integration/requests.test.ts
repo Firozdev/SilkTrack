@@ -7,7 +7,6 @@ import {
   createRequest,
   isReleasedForPurchase,
   recordPayment,
-  sendToChina,
   setHold,
   type RequestInput,
 } from "@/server/requests";
@@ -81,7 +80,7 @@ describe("product requests", () => {
     const admin = await makeUser("ADMIN");
     await makeRate(toYmd(today(BD_TZ)), "17", admin.id);
     const { order } = await createRequest(cs, base());
-    await sendToChina(cs, order.id);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).requestStatus).toBe("SENT_TO_CHINA");
     expect(await prisma.notification.count({ where: { type: "NEW_REQUEST" } })).toBe(1);
     await expect(markCustomerApproved(cs, order.id)).rejects.toThrow(/quoted/);
 
