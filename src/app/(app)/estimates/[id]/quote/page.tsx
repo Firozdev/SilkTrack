@@ -19,7 +19,10 @@ export default async function CustomerQuote({ params }: PageProps<"/estimates/[i
   const [b, branding] = await Promise.all([quoteBreakdown(e), getDocumentBranding()]);
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-sm text-gray-900 print:p-0">
-      <div className="no-print mb-6 flex justify-end">
+      <div className="no-print mb-6 flex justify-end gap-2">
+        <a href={`/documents/quote/${e.id}`} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50">
+          ⬇ Download PDF
+        </a>
         <PrintButton />
       </div>
       <DocumentHeader branding={branding}>

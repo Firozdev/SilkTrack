@@ -393,6 +393,7 @@ model User {
   notifications      Notification[]
   auditLogs          AuditLog[]
   settingsUpdated    Setting[]
+  generatedDocuments GeneratedDocument[]  @relation("GeneratedDocumentCreatedBy")
 }
 
 /// Admin-managed settings: bulk threshold, price-change %, BD weight
@@ -655,6 +656,8 @@ model Payment {
 
   submission PaymentSubmission?
 
+  generatedDocuments GeneratedDocument[]
+
   @@index([orderId])
 }
 
@@ -726,6 +729,8 @@ model Estimate {
   updatedAt       DateTime  @updatedAt
 
   lines EstimateLine[]
+
+  generatedDocuments GeneratedDocument[]
 
   @@unique([orderId, version])
 }
@@ -973,6 +978,9 @@ model ShippingOrder {
   invoicedById      String?
   invoicedBy        User?         @relation("ShippingOrderInvoicedBy", fields: [invoicedById], references: [id])
   invoicedAt        DateTime?
+  invoiceDueDate    DateTime?
+  /// Printed on the invoice PDF.
+  invoiceNotes      String?
 
   // Bangladesh → customer
   deliveryCourier    DeliveryCourier?
@@ -998,6 +1006,8 @@ model ShippingOrder {
   paymentSubmissions PaymentSubmission[]
 
   notificationEvents NotificationEvent[]
+
+  generatedDocuments GeneratedDocument[]
 
   @@index([status])
   @@index([customerId])
@@ -1381,6 +1391,8 @@ model Invoice {
 
   payments Payment[]
 
+  generatedDocuments GeneratedDocument[]
+
   @@index([orderId])
 }
 
@@ -1671,4 +1683,40 @@ model PaymentAccount {
   updatedAt     DateTime           @updatedAt
 
   @@index([sortOrder])
+}
+
+// ───────────────────────── Generated PDFs ─────────────────────────
+
+enum DocumentKind {
+  SHIPPING_INVOICE
+  ORDER_INVOICE
+  QUOTE
+  PAYMENT_RECEIPT
+}
+
+/// A generated PDF. Each regeneration adds a new version; the latest is downloaded.
+model GeneratedDocument {
+  id              String         @id @default(cuid())
+  kind            DocumentKind
+  /// e.g. INV-SHO-000012, RCT-000045, EST-000003 v2
+  number          String
+  version         Int
+  storageKey      String
+  fileName        String
+  shippingOrderId String?
+  shippingOrder   ShippingOrder? @relation(fields: [shippingOrderId], references: [id])
+  invoiceId       String?
+  invoice         Invoice?       @relation(fields: [invoiceId], references: [id])
+  estimateId      String?
+  estimate        Estimate?      @relation(fields: [estimateId], references: [id])
+  paymentId       String?
+  payment         Payment?       @relation(fields: [paymentId], references: [id])
+  createdById     String?
+  createdBy       User?          @relation("GeneratedDocumentCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@index([shippingOrderId])
+  @@index([paymentId])
+  @@index([estimateId])
+  @@index([invoiceId])
 }

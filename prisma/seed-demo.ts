@@ -79,6 +79,39 @@ async function main() {
   });
   await prisma.shippingOrder.update({ where: { id: shipPortal.id }, data: { shipmentId: shipment.id, status: "IN_SHIPMENT", receivedChinaAt: new Date(), cartonCount: 1, grossWeightKg: "4.5", cbm: "0.06" } });
 
+  // A Ship for Me order received in Bangladesh and invoiced (4.5 kg × ৳850 + ৳120 delivery − ৳25) with a partial payment:
+  // open it in the staff app → "Download invoice PDF" and the payment's receipt PDF (made on first download).
+  const rate = await prisma.exchangeRate.findFirst({ orderBy: { effectiveDate: "desc" } });
+  const invoiced = await prisma.shippingOrder.create({
+    data: {
+      customerId: portalCustomer.id,
+      source: "PORTAL",
+      shippingMethod: "AIR",
+      status: "INVOICED",
+      shipmentId: shipment.id,
+      items: { create: [item("Winter jackets (demo)", 4)] },
+      events: event,
+      receivedChinaAt: new Date(),
+      receivedBdAt: new Date(),
+      cartonCount: 1,
+      grossWeightKg: "4.5",
+      cbm: "0.05",
+      billWeightKg: "4.5",
+      shipRatePerKgBdt: "850",
+      shippingChargeBdt: "3825.00",
+      localDeliveryBdt: "120.00",
+      discountBdt: "25.00",
+      invoiceTotalBdt: "3920.00",
+      rateUsed: rate?.rate,
+      exchangeRateId: rate?.id,
+      invoicedById: admin.id,
+      invoicedAt: new Date(),
+      invoiceDueDate: new Date(Date.now() + 7 * 86_400_000),
+      invoiceNotes: "Demo invoice – please pay within 7 days.",
+    },
+  });
+  await prisma.payment.create({ data: { shippingOrderId: invoiced.id, type: "SHIPPING_SERVICE", amountBdt: "2000.00", method: "BKASH", reference: "DEMO-TRX-1", receivedById: admin.id, paidAt: new Date() } });
+
   // Demo staff for the CS and China roles, then a few unread notifications for every role,
   // built from the same rules and templates the app uses.
   await staffUser("cs.demo@silktrack.test", "Demo CS", "CS", "Asia/Dhaka");
@@ -145,6 +178,7 @@ async function main() {
   console.log(`Admin login: admin.demo@silktrack.test / ${STAFF_PASSWORD} (local demo only)`);
   console.log("Every role now has a few unread demo notifications.");
   console.log(`Demo customer's ${"SHO-" + String(shipPortal.number).padStart(6, "0")} is in shipment ${shipment.code}; their Buy for Me requests are not in a shipment yet.`);
+  console.log(`Invoiced demo order SHO-${String(invoiced.number).padStart(6, "0")}: download its invoice / receipt PDFs from the staff app.`);
 }
 
 main()

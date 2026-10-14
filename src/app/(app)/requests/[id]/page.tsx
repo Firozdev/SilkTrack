@@ -310,7 +310,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
 
           {can(user.role, "price:viewSelling") && (
             <Card title="Payments">
-              <Table head={["Date", "Type", "Amount", "Method"]} empty="No payments yet.">
+              <Table head={["Date", "Type", "Amount", "Method", "Receipt"]} empty="No payments yet.">
                 {payments.map((p) => (
                   <tr key={p.id}>
                     <td className={tdCls}>{fmtDateTime(p.paidAt, user.timezone)}</td>
@@ -319,6 +319,15 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
                     <td className={tdCls}>
                       {humanize(p.method)}
                       {p.reference && <div className="text-xs text-gray-400">{p.reference}</div>}
+                    </td>
+                    <td className={tdCls}>
+                      {p.type !== "REFUND" && can(user.role, "invoice:view") ? (
+                        <a className="text-blue-700 hover:underline" href={`/documents/receipt/${p.id}`}>
+                          PDF
+                        </a>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                   </tr>
                 ))}

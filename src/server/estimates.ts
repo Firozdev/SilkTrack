@@ -10,6 +10,7 @@ import { docNo } from "@/lib/format";
 import { logChanges, diffFields } from "@/lib/audit";
 import { queueCustomerMessage } from "@/lib/notify";
 import { notify } from "./notify";
+import { generateQuotePdf, safely } from "./documents";
 import { rateForConversion } from "./rates";
 import { quoteBreakdown } from "./quote-breakdown";
 import { applyCustomerApproval, applyCustomerRejection, markCustomerApproved, markRejected } from "./requests";
@@ -233,6 +234,7 @@ export async function sendQuotationToCustomer(actor: Actor, id: string) {
     }. Valid until ${e.validUntil.toISOString().slice(0, 10)}.`,
     orderId: e.orderId,
   });
+  await safely("quotation", () => generateQuotePdf(id, actor.id));
   await notify("QUOTE_SENT", { order: e.order, customerId: e.order.customerId }, { validUntil: e.validUntil.toISOString().slice(0, 10) }, { userId: actor.id });
 }
 

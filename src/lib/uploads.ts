@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { inflateSync } from "node:zlib";
 import path from "node:path";
 import type { AttachmentKind, Prisma } from "@/generated/prisma/client";
 import { prisma } from "./prisma";
@@ -66,7 +67,10 @@ export async function saveLogo(f: File): Promise<StoredLogo> {
   const buf = Buffer.from(await f.arrayBuffer());
   let mime: StoredLogo["mime"];
   let ext: string;
-  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) [mime, ext] = ["image/png", ".png"];
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    if (!pngDecodes(buf)) throw new UserError("This PNG file is damaged – export it again and re-upload");
+    [mime, ext] = ["image/png", ".png"];
+  }
   else if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) [mime, ext] = ["image/jpeg", ".jpg"];
   else {
     const text = buf.toString("utf8");
@@ -78,4 +82,29 @@ export async function saveLogo(f: File): Promise<StoredLogo> {
   const key = `logo-${randomUUID()}${ext}`;
   await writeFile(path.join(UPLOAD_DIR, key), buf);
   return { key, mime, fileName: f.name };
+}
+
+/** True when the PNG's image data actually decompresses (a damaged PNG would break PDF rendering). */
+function pngDecodes(buf: Buffer) {
+  try {
+    const parts: Buffer[] = [];
+    for (let i = 8; i + 8 <= buf.length; ) {
+      const len = buf.readUInt32BE(i);
+      const type = buf.toString("latin1", i + 4, i + 8);
+      if (type === "IDAT") parts.push(buf.subarray(i + 8, i + 8 + len));
+      if (type === "IEND") break;
+      i += 12 + len;
+    }
+    return parts.length > 0 && inflateSync(Buffer.concat(parts)).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Store a generated PDF; returns its storage key (read back with readAttachment). */
+export async function saveGeneratedPdf(pdf: Buffer, prefix: string): Promise<string> {
+  await mkdir(UPLOAD_DIR, { recursive: true });
+  const key = `doc-${prefix.replace(/[^a-z0-9-]/gi, "")}-${randomUUID()}.pdf`;
+  await writeFile(path.join(UPLOAD_DIR, key), pdf);
+  return key;
 }
