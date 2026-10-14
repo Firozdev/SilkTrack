@@ -254,6 +254,16 @@ const en = {
   filter: "Filter",
   updatesTitle: "Updates",
   noUpdates: "No updates yet.",
+  // Shipment box
+  shipmentBox: "Shipment",
+  shipmentCode: "Shipment code",
+  shipmentStart: "Shipment start date",
+  departureDate: "Departure date",
+  bdReceiveDate: "Estimated Bangladesh receive date",
+  notAssignedShipment: "Not yet assigned to a shipment",
+  planned: "planned",
+  estimated: "estimated",
+  arrivedTag: "arrived",
 };
 
 export type Dict = typeof en;
@@ -493,6 +503,15 @@ const bn: Dict = {
   filter: "ফিল্টার",
   updatesTitle: "আপডেট",
   noUpdates: "এখনো কোনো আপডেট নেই।",
+  shipmentBox: "শিপমেন্ট",
+  shipmentCode: "শিপমেন্ট কোড",
+  shipmentStart: "শিপমেন্ট শুরুর তারিখ",
+  departureDate: "রওনার তারিখ",
+  bdReceiveDate: "বাংলাদেশে পৌঁছানোর সম্ভাব্য তারিখ",
+  notAssignedShipment: "এখনো কোনো শিপমেন্টে দেওয়া হয়নি",
+  planned: "পরিকল্পিত",
+  estimated: "আনুমানিক",
+  arrivedTag: "পৌঁছেছে",
 };
 
 export const DICTS: Record<Lang, Dict> = { en, bn };
