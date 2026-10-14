@@ -4,6 +4,7 @@ import { BD_TZ, fmtDateTime, fmtDay } from "@/lib/dates";
 import { docNo, fmtBdt } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
 import { portalSample } from "@/server/portal";
+import { ownerOf } from "@/server/portal-access";
 import { amountDue } from "@/server/payment-submissions";
 import { fill } from "../../../i18n";
 import { portalLabel } from "../../../labels";
@@ -15,13 +16,17 @@ export default async function PortalSamplePage({ params }: PageProps<"/portal/sa
   const acc = await requirePortalAccount();
   const { lang, t } = await getDict();
   const { id } = await params;
-  const s = await portalSample(acc.customer.id, id);
-  if (!s) notFound();
-  const due = await amountDue(acc.customer.id, { kind: "sample", id: s.id });
+  const cid = await ownerOf(acc, "sample", id);
+  const s = cid ? await portalSample(cid, id) : null;
+  if (!cid || !s) notFound();
+  const due = await amountDue(cid, { kind: "sample", id: s.id });
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">{fill(t.sampleTitle, { no: docNo("sample", s.number) })}</h1>
+        <h1 className="text-xl font-semibold">
+          {fill(t.sampleTitle, { no: docNo("sample", s.number) })}
+          {acc.kind === "AGENT" && <span className="mt-0.5 block text-sm font-normal text-gray-500">{fill(t.forCustomer, { name: s.customer.name, code: s.customer.code })}</span>}
+        </h1>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
           <PStatus lang={lang} value={s.status} /> {fill(t.requestedOn, { date: fmtDateTime(s.requestedAt, BD_TZ) })}
           {s.order && (

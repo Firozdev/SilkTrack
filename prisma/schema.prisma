@@ -220,6 +220,12 @@ enum RecordSource {
   PORTAL
 }
 
+/// CUSTOMER = one customer's own login; AGENT = our agent, ordering for several customers.
+enum PortalAccountKind {
+  CUSTOMER
+  AGENT
+}
+
 /// Customer portal login lifecycle. Self sign-up starts PENDING until staff
 /// approve it and link it to a Customer (phones can't be verified without SMS).
 enum PortalAccountStatus {
@@ -424,20 +430,23 @@ model ExchangeRate {
 // ───────────────────────── Module 1: Product requests ─────────────────────────
 
 model Customer {
-  id        String       @id @default(cuid())
+  id             String         @id @default(cuid())
   /// Short code printed on carton labels, e.g. C-00042.
-  code      String       @unique
-  name      String
-  phone     String
-  email     String?
-  address   String
-  district  String?
-  area      String?
-  notes     String?
+  code           String         @unique
+  name           String
+  phone          String
+  email          String?
+  address        String
+  district       String?
+  area           String?
+  notes          String?
   /// STAFF = added by our team; PORTAL = signed up in the customer portal.
-  source    RecordSource @default(STAFF)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  source         RecordSource   @default(STAFF)
+  /// The agent who looks after this customer (they can order and see everything for them).
+  agentAccountId String?
+  agentAccount   PortalAccount? @relation("AgentCustomers", fields: [agentAccountId], references: [id])
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   orders             Order[]
   samples            Sample[]
@@ -447,6 +456,7 @@ model Customer {
   notifications      Notification[]
 
   @@index([phone])
+  @@index([agentAccountId])
 }
 
 /// A customer request; becomes the order once approved. One record from
@@ -460,6 +470,9 @@ model Order {
   /// Null when the customer submitted it through the portal.
   createdById          String?
   createdBy            User?          @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  /// Portal login that submitted it (the customer or their agent). Null for staff-created.
+  placedByAccountId    String?
+  placedByAccount      PortalAccount? @relation("OrderPlacedBy", fields: [placedByAccountId], references: [id])
   type                 OrderType      @default(SINGLE)
   /// True when CS overrode the auto-suggested type.
   typeOverridden       Boolean        @default(false)
@@ -887,22 +900,25 @@ model ShippingRate {
 /// put it in a weekly shipment, receive in BD, invoice in BDT and deliver.
 /// Prefix SHO-. Billed on the China warehouse weight (air) or CBM (sea).
 model ShippingOrder {
-  id             String              @id @default(cuid())
-  number         Int                 @unique @default(autoincrement())
-  customerId     String
-  customer       Customer            @relation(fields: [customerId], references: [id])
-  source         RecordSource        @default(STAFF)
+  id                String              @id @default(cuid())
+  number            Int                 @unique @default(autoincrement())
+  customerId        String
+  customer          Customer            @relation(fields: [customerId], references: [id])
+  source            RecordSource        @default(STAFF)
   /// Null when the customer submitted it through the portal.
-  createdById    String?
-  createdBy      User?               @relation("ShippingOrderCreatedBy", fields: [createdById], references: [id])
-  status         ShippingOrderStatus @default(REQUESTED)
-  shippingMethod ShippingMethod      @default(AIR)
+  createdById       String?
+  createdBy         User?               @relation("ShippingOrderCreatedBy", fields: [createdById], references: [id])
+  /// Portal login that submitted it (the customer or their agent). Null for staff-created.
+  placedByAccountId String?
+  placedByAccount   PortalAccount?      @relation("ShippingOrderPlacedBy", fields: [placedByAccountId], references: [id])
+  status            ShippingOrderStatus @default(REQUESTED)
+  shippingMethod    ShippingMethod      @default(AIR)
   /// Customer asked for a QA test at the China warehouse.
-  qaRequested    Boolean             @default(false)
+  qaRequested       Boolean             @default(false)
   /// Rate card live when the order was placed – its estimate and invoice prefill use it.
-  shippingRateId String?
-  shippingRate   ShippingRate?       @relation(fields: [shippingRateId], references: [id])
-  customerNotes  String?
+  shippingRateId    String?
+  shippingRate      ShippingRate?       @relation(fields: [shippingRateId], references: [id])
+  customerNotes     String?
 
   // Customer's estimate (from the request), for reference only
   declaredWeightKg Decimal? @db.Decimal(10, 3)
@@ -1422,9 +1438,10 @@ model PortalAccount {
   email        String?
   passwordHash String
   status       PortalAccountStatus @default(PENDING)
+  kind         PortalAccountKind   @default(CUSTOMER)
   /// Portal language, also used for messages to this customer.
   locale       Locale              @default(EN)
-  /// Set by staff on approval (existing customer or one created from the sign-up).
+  /// Set by staff on approval (existing customer or one created from the sign-up). Null for agents.
   customerId   String?
   customer     Customer?           @relation(fields: [customerId], references: [id])
   // Details given at sign-up, used to create the Customer on approval
@@ -1449,6 +1466,10 @@ model PortalAccount {
   tokens             PortalToken[]
   attachments        Attachment[]
   paymentSubmissions PaymentSubmission[]
+  /// AGENT only: the customers this agent looks after.
+  agentCustomers     Customer[]          @relation("AgentCustomers")
+  placedOrders       Order[]             @relation("OrderPlacedBy")
+  placedShipping     ShippingOrder[]     @relation("ShippingOrderPlacedBy")
 
   @@index([status])
   @@index([customerId])

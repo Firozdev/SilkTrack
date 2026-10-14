@@ -11,7 +11,7 @@ import { portalShippingEditable } from "@/lib/editability";
 import { rateForConversion } from "./rates";
 import { liveRate, rateCardFor } from "./shipping-rates";
 import { capacityWarning, isAccepting, recalcTotals, suggestShipment } from "./shipments";
-import { findOrCreateCustomer, type CustomerInput } from "./requests";
+import { findOrCreateCustomer, type CustomerInput, type PlacedBy } from "./requests";
 import type { Actor } from "./actor";
 
 type Tx = Prisma.TransactionClient;
@@ -63,13 +63,14 @@ export async function createShippingOrder(actor: Actor, input: ShippingOrderInpu
 export type PortalShippingOrderInput = Omit<ShippingOrderInput, "customer">;
 
 /** The customer submits a shipping order in the portal. */
-export async function createPortalShippingOrder(customerId: string, input: PortalShippingOrderInput) {
-  const s = await insertShippingOrder({ ...input, customer: { id: customerId, name: "", phone: "", address: "" } }, { source: "PORTAL", customerId });
-  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_SHIPPING_ORDER", title: `Portal shipping order: ${shippingNo(s)}`, body: "Submitted by the customer in the portal." });
+export async function createPortalShippingOrder(customerId: string, input: PortalShippingOrderInput, placedBy?: PlacedBy) {
+  const s = await insertShippingOrder({ ...input, customer: { id: customerId, name: "", phone: "", address: "" } }, { source: "PORTAL", customerId, accountId: placedBy?.accountId });
+  const body = placedBy?.agentName ? `Submitted in the portal by agent ${placedBy.agentName}.` : "Submitted by the customer in the portal.";
+  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_SHIPPING_ORDER", title: `Portal shipping order: ${shippingNo(s)}`, body });
   return s;
 }
 
-async function insertShippingOrder(input: ShippingOrderInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string }) {
+async function insertShippingOrder(input: ShippingOrderInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string; accountId?: string }) {
   const actorId = by.source === "STAFF" ? by.actorId : null;
   const items = input.items.filter((i) => i.productName.trim() && i.quantity > 0);
   if (!items.length) throw new UserError("Add at least one product with a quantity");
@@ -81,6 +82,7 @@ async function insertShippingOrder(input: ShippingOrderInput, by: { actorId: str
         customerId,
         source: by.source,
         createdById: actorId,
+        placedByAccountId: by.source === "PORTAL" ? (by.accountId ?? null) : null,
         shippingMethod: input.shippingMethod,
         qaRequested: input.qaRequested,
         shippingRateId: rate?.id ?? null,

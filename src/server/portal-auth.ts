@@ -117,7 +117,8 @@ export async function authenticate(phoneInput: string, password: string, now = n
     REJECTED: `Your sign-up was not approved${acc.rejectReason ? `: ${acc.rejectReason}` : ""}. Please contact us.`,
     DISABLED: "This account is disabled. Please contact us.",
   };
-  if (blocked[acc.status] || !acc.customerId) return { ok: false, error: blocked[acc.status] ?? blocked.PENDING! };
+  // A customer login needs its customer; an agent works for the customers assigned to them.
+  if (blocked[acc.status] || (acc.kind === "CUSTOMER" && !acc.customerId)) return { ok: false, error: blocked[acc.status] ?? blocked.PENDING! };
   await prisma.portalAccount.update({ where: { id: acc.id }, data: { failedLogins: 0, lockedUntil: null, lastLoginAt: now } });
   return { ok: true, accountId: acc.id };
 }
@@ -138,8 +139,10 @@ export async function accountForSession(token: string | undefined, now = new Dat
   });
   if (!s || s.expiresAt <= now) return null;
   const a = s.account;
-  if (a.status !== "ACTIVE" || !a.customer) return null;
-  return { id: a.id, name: a.name, phone: a.phone, customer: a.customer };
+  if (a.status !== "ACTIVE") return null;
+  if (a.kind === "AGENT") return { id: a.id, name: a.name, phone: a.phone, kind: "AGENT" as const, customer: null };
+  if (!a.customer) return null;
+  return { id: a.id, name: a.name, phone: a.phone, kind: "CUSTOMER" as const, customer: a.customer };
 }
 
 export async function endSession(token: string | undefined) {
@@ -153,6 +156,7 @@ export async function createResetToken(actor: Actor, accountId: string, now = ne
   assertCan(actor.role, "request:edit");
   const acc = await prisma.portalAccount.findUnique({ where: { id: accountId } });
   if (!acc) throw new UserError("Account not found");
+  if (acc.kind === "AGENT") assertCan(actor.role, "agent:manage");
   if (acc.status !== "ACTIVE") throw new UserError("Only active accounts can reset their password");
   const { token, tokenHash } = newToken();
   await prisma.$transaction([
@@ -260,6 +264,7 @@ export async function setAccountDisabled(actor: Actor, accountId: string, disabl
   assertCan(actor.role, "request:edit");
   const acc = await prisma.portalAccount.findUnique({ where: { id: accountId } });
   if (!acc) throw new UserError("Account not found");
+  if (acc.kind === "AGENT") assertCan(actor.role, "agent:manage");
   const from = disabled ? "ACTIVE" : "DISABLED";
   if (acc.status !== from) throw new UserError(disabled ? "Only active accounts can be disabled" : "This account is not disabled");
   const to = disabled ? "DISABLED" : "ACTIVE";
@@ -270,9 +275,10 @@ export async function setAccountDisabled(actor: Actor, accountId: string, disabl
   ]);
 }
 
+/** Customer logins (agents are listed on the Agents page). */
 export function listPortalAccounts(status?: PortalAccountStatus) {
   return prisma.portalAccount.findMany({
-    where: status ? { status } : {},
+    where: { kind: "CUSTOMER", ...(status ? { status } : {}) },
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     take: 200,
     select: {
@@ -313,6 +319,7 @@ export async function inviteCustomer(actor: Actor, customerId: string, now = new
   const other = c.portalAccounts.find((a) => a.phone !== phone && ["ACTIVE", "INVITED", "PENDING"].includes(a.status));
   if (other) throw new UserError(`This customer already has a portal login on ${other.phone}`);
   let acc = await prisma.portalAccount.findUnique({ where: { phone } });
+  if (acc?.kind === "AGENT") throw new UserError("This phone number is an agent's portal login");
   if (acc && acc.customerId && acc.customerId !== c.id && acc.status !== "REJECTED") throw new UserError("This phone number is used by another customer's portal login");
   if (acc?.status === "ACTIVE") throw new UserError("This customer already uses the portal");
   if (acc?.status === "PENDING") throw new UserError("This customer has a sign-up waiting – approve it instead");
@@ -336,11 +343,16 @@ export async function inviteCustomer(actor: Actor, customerId: string, now = new
     acc = acc
       ? await tx.portalAccount.update({ where: { id: acc.id }, data })
       : await tx.portalAccount.create({ data: { ...data, phone, passwordHash: await hashPassword(randomBytes(24).toString("hex")) } });
-    await tx.portalToken.updateMany({ where: { accountId: acc.id, purpose: "INVITE", usedAt: null }, data: { usedAt: now } });
-    await tx.portalToken.create({ data: { tokenHash, accountId: acc.id, purpose: "INVITE", expiresAt: new Date(now.getTime() + INVITE_DAYS * 86_400_000), createdById: actor.id } });
+    await storeInviteToken(tx, acc.id, tokenHash, actor.id, now);
     await tx.auditLog.create({ data: { entityType: "PortalAccount", entityId: acc.id, userId: actor.id, action: "UPDATE", field: "status", newValue: "INVITED" } });
   });
   return { token, phone, name: c.name };
+}
+
+/** Save a new "set your password" link for the account; any older link stops working. */
+export async function storeInviteToken(tx: Prisma.TransactionClient, accountId: string, tokenHash: string, actorId: string, now: Date) {
+  await tx.portalToken.updateMany({ where: { accountId, purpose: "INVITE", usedAt: null }, data: { usedAt: now } });
+  await tx.portalToken.create({ data: { tokenHash, accountId, purpose: "INVITE", expiresAt: new Date(now.getTime() + INVITE_DAYS * 86_400_000), createdById: actorId } });
 }
 
 /** The customer opens the invitation link and chooses a password; the login becomes active. */

@@ -4,6 +4,7 @@ import { portalRequestEditable } from "@/lib/editability";
 import { docNo } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
 import { portalOrder } from "@/server/portal";
+import { ownerOf } from "@/server/portal-access";
 import { portalRequestUpdateAction } from "../../../../actions";
 import { getDict } from "../../../../lang";
 import { PortalRequestForm } from "../../new/request-form";
@@ -12,8 +13,9 @@ export default async function PortalEditRequestPage({ params }: PageProps<"/port
   const acc = await requirePortalAccount();
   const { t } = await getDict();
   const { id } = await params;
-  const o = await portalOrder(acc.customer.id, id);
-  if (!o) notFound();
+  const cid = await ownerOf(acc, "order", id);
+  const o = cid ? await portalOrder(cid, id) : null;
+  if (!cid || !o) notFound();
   if (!portalRequestEditable({ requestStatus: o.requestStatus, estimateCount: o._count.estimates })) redirect(`/portal/requests/${id}`);
   return (
     <>

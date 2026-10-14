@@ -11,6 +11,7 @@ export async function getOrderView(orderId: string, viewer: Viewer) {
     include: {
       customer: true,
       createdBy: { select: { name: true } },
+      placedByAccount: { select: { name: true, kind: true } },
       lines: {
         orderBy: { lineNo: "asc" },
         include: {

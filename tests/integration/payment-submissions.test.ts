@@ -125,8 +125,8 @@ describe("Customer-reported payments", () => {
     const so = await invoicedShipping(k.customerId);
     const s = await submitPayment(k, { kind: "shipping", id: so.id }, { amountBdt: "100", method: "BKASH", reference: "TRX55555", paidAt: PAID });
     const att = await prisma.attachment.create({ data: { kind: "OTHER", storageKey: "k", fileName: "shot.png", mimeType: "image/png", sizeBytes: 1, uploadedByAccountId: k.accountId, paymentSubmissionId: s.id } });
-    expect(await portalAttachment(k.customerId, att.id)).not.toBeNull();
-    expect(await portalAttachment(other.customerId, att.id)).toBeNull();
+    expect(await portalAttachment([k.customerId], att.id)).not.toBeNull();
+    expect(await portalAttachment([other.customerId], att.id)).toBeNull();
   });
 });
 

@@ -70,8 +70,8 @@ describe("Files on product lines", () => {
 
     const att = await prisma.attachment.findFirstOrThrow({ where: { fileName: "chair.png" } });
     expect([att.uploadedByAccountId, att.uploadedById]).toEqual([a.id, null]);
-    expect(await portalAttachment(a.customerId!, att.id)).not.toBeNull();
-    expect(await portalAttachment(b.customerId!, att.id)).toBeNull();
+    expect(await portalAttachment([a.customerId!], att.id)).not.toBeNull();
+    expect(await portalAttachment([b.customerId!], att.id)).toBeNull();
     const view = await portalShippingOrder(a.customerId!, so.id);
     expect(view?.items[0].attachments.map((x) => x.fileName)).toEqual(["chair.png"]);
   });

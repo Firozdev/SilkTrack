@@ -49,6 +49,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
     include: {
       customer: { select: { id: true, name: true, code: true, phone: true, email: true, address: true, district: true } },
       createdBy: { select: { name: true } },
+      placedByAccount: { select: { name: true, kind: true } },
       receivedChinaBy: { select: { name: true } },
       qaBy: { select: { name: true } },
       invoicedBy: { select: { name: true } },
@@ -92,7 +93,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
         subtitle={
           <span className="flex flex-wrap items-center gap-2">
             <Badge value={s.status} /> <A href={`/customers/${s.customer.id}`}>{s.customer.name} ({s.customer.code})</A> · {humanize(s.shippingMethod)}
-            {s.qaRequested && " · QA requested"} · {s.source === "PORTAL" ? "from customer portal" : `by ${s.createdBy?.name ?? "—"}`}, {fmtDateTime(s.createdAt, user.timezone)}
+            {s.qaRequested && " · QA requested"} · {s.source === "PORTAL" ? (s.placedByAccount?.kind === "AGENT" ? `from agent ${s.placedByAccount.name} (portal)` : "from customer portal") : `by ${s.createdBy?.name ?? "—"}`}, {fmtDateTime(s.createdAt, user.timezone)}
           </span>
         }
       />

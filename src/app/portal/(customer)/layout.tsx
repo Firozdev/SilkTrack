@@ -28,7 +28,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
               {t.shipMyGoods}
             </Link>
             <span className="hidden px-2 text-gray-500 sm:inline">
-              {acc.customer.name} ({acc.customer.code})
+              {acc.kind === "AGENT" ? `${acc.name} · ${t.agentTag}` : `${acc.customer.name} (${acc.customer.code})`}
             </span>
             <Suspense>
               <LangSwitch lang={lang} label={t.language} />

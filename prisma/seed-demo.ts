@@ -5,6 +5,8 @@ import { hashPassword } from "../src/lib/password";
 
 const PORTAL_PHONE = "01700000099";
 const PORTAL_PASSWORD = "demo-pass-123";
+const AGENT_PHONE = "01900000099";
+const AGENT_PASSWORD = "agent-pass-123";
 
 async function customer(code: string, name: string, phone: string) {
   return prisma.customer.upsert({ where: { code }, update: {}, create: { code, name, phone, address: "House 1, Road 2, Mirpur, Dhaka", district: "Dhaka" } });
@@ -35,10 +37,26 @@ async function main() {
   await prisma.paymentSubmission.create({ data: { customerId: portalCustomer.id, accountId: account.id, orderId: buyPortal.id, amountBdt: "1500.00", method: "BKASH", reference: ref, paidAt: new Date() } });
   await prisma.paymentSubmission.create({ data: { customerId: portalCustomer.id, accountId: account.id, shippingOrderId: shipPortal.id, amountBdt: "800.00", method: "NAGAD", reference: `${ref}N`, paidAt: new Date() } });
 
+  // An agent with two customers and one request placed for each.
+  const agent = await prisma.portalAccount.upsert({
+    where: { phone: AGENT_PHONE },
+    update: {},
+    create: { kind: "AGENT", phone: AGENT_PHONE, name: "Demo Agent", passwordHash: await hashPassword(AGENT_PASSWORD), status: "ACTIVE", address: "", invitedById: admin.id, invitedAt: new Date() },
+  });
+  for (const [code, name, phone] of [
+    ["C-DEMO3", "Demo Agent Customer A", "01700000097"],
+    ["C-DEMO4", "Demo Agent Customer B", "01700000096"],
+  ]) {
+    const c = await customer(code, name, phone);
+    await prisma.customer.update({ where: { id: c.id }, data: { agentAccountId: agent.id } });
+    await prisma.order.create({ data: { customerId: c.id, source: "PORTAL", placedByAccountId: agent.id, requestStatus: "SENT_TO_CHINA", shippingMethod: "AIR", lines: { create: [line(`Phone case for ${name} (demo)`, 5)] } } });
+  }
+
   await prisma.issue.create({ data: { type: "DAMAGED", source: "CHINA_RECEIVING", orderId: buyStaff.id, description: "Demo: carton arrived crushed, one chair leg broken", reportedById: admin.id } });
 
-  console.log("Demo data added: 2 Buy for Me, 2 Ship for Me, 2 payments to confirm, 1 open issue.");
-  console.log(`Portal login: mobile ${PORTAL_PHONE} / password ${PORTAL_PASSWORD}`);
+  console.log("Demo data added: 4 Buy for Me (2 by the agent), 2 Ship for Me, 2 payments to confirm, 1 open issue.");
+  console.log(`Customer portal login: mobile ${PORTAL_PHONE} / password ${PORTAL_PASSWORD}`);
+  console.log(`Agent portal login:    mobile ${AGENT_PHONE} / password ${AGENT_PASSWORD}`);
 }
 
 main()

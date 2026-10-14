@@ -4,6 +4,7 @@ import { portalShippingEditable } from "@/lib/editability";
 import { docNo } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
 import { portalShippingOrder } from "@/server/portal";
+import { ownerOf } from "@/server/portal-access";
 import { portalShippingUpdateAction } from "../../../../actions";
 import { getDict } from "../../../../lang";
 import { PortalShippingForm } from "../../new/shipping-form";
@@ -13,8 +14,9 @@ export default async function PortalEditShippingPage({ params }: PageProps<"/por
   const acc = await requirePortalAccount();
   const [{ t }, rates] = await Promise.all([getDict(), rateCard()]);
   const { id } = await params;
-  const s = await portalShippingOrder(acc.customer.id, id);
-  if (!s) notFound();
+  const cid = await ownerOf(acc, "shipping", id);
+  const s = cid ? await portalShippingOrder(cid, id) : null;
+  if (!cid || !s) notFound();
   if (!portalShippingEditable(s)) redirect(`/portal/shipping/${id}`);
   return (
     <>

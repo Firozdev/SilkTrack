@@ -6,12 +6,25 @@ import { Card, Field, btnCls, inputCls } from "@/components/ui";
 import type { ActionState } from "@/lib/action";
 import { portalRequestAction } from "../../../actions";
 import type { Dict } from "../../../i18n";
+import { CustomerPicker, type PickCustomer } from "../../customer-picker";
 
 export type RequestLineInit = { id: string; productName: string; color: string; size: string; quantity: number; notes: string; links: string; files: number };
 export type RequestInit = { id: string; shippingMethod: "AIR" | "SEA"; targetBudgetBdt: string; customerNotes: string; lines: RequestLineInit[] };
 
-/** New request, or editing one (`initial` + `action`). */
-export function PortalRequestForm({ t, initial, action = portalRequestAction, submitLabel }: { t: Dict; initial?: RequestInit; action?: (p: ActionState, fd: FormData) => Promise<ActionState>; submitLabel?: string }) {
+/** New request, or editing one (`initial` + `action`). Agents pass `customers` to choose who it is for. */
+export function PortalRequestForm({
+  t,
+  initial,
+  action = portalRequestAction,
+  submitLabel,
+  customers,
+}: {
+  t: Dict;
+  initial?: RequestInit;
+  action?: (p: ActionState, fd: FormData) => Promise<ActionState>;
+  submitLabel?: string;
+  customers?: PickCustomer[];
+}) {
   const start = initial?.lines.length ? initial.lines.map((_, i) => i) : [0];
   const [keys, setKeys] = useState(start);
   const [next, setNext] = useState(start.length);
@@ -19,6 +32,7 @@ export function PortalRequestForm({ t, initial, action = portalRequestAction, su
   return (
     <ActionForm action={action} submitLabel={submitLabel ?? t.sendRequest} className="max-w-4xl">
       {initial && <input type="hidden" name="id" value={initial.id} />}
+      {customers && <CustomerPicker t={t} customers={customers} />}
       <Card title={t.products}>
         <div className="space-y-4">
           {keys.map((k, i) => (

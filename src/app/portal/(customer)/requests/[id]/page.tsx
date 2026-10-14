@@ -5,6 +5,7 @@ import { BD_TZ, fmtDateTime, fmtDay, today } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
 import { portalOrder } from "@/server/portal";
+import { ownerOf } from "@/server/portal-access";
 import { portalQuoteAction } from "../../../actions";
 import { fill } from "../../../i18n";
 import { portalLabel } from "../../../labels";
@@ -20,9 +21,10 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
   const acc = await requirePortalAccount();
   const { lang, t } = await getDict();
   const { id } = await params;
-  const o = await portalOrder(acc.customer.id, id);
-  if (!o) notFound();
-  const due = await amountDue(acc.customer.id, { kind: "order", id: o.id });
+  const cid = await ownerOf(acc, "order", id);
+  const o = cid ? await portalOrder(cid, id) : null;
+  if (!cid || !o) notFound();
+  const due = await amountDue(cid, { kind: "order", id: o.id });
   const q = o.quote;
   const awaiting = q?.status === "SENT_TO_CUSTOMER";
   const expired = !!q && q.validUntil < today(BD_TZ);
@@ -30,7 +32,10 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">{docNo("order", o.number)}</h1>
+        <h1 className="text-xl font-semibold">
+          {docNo("order", o.number)}
+          {acc.kind === "AGENT" && <span className="mt-0.5 block text-sm font-normal text-gray-500">{fill(t.forCustomer, { name: o.customer.name, code: o.customer.code })}</span>}
+        </h1>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
           <PStatus lang={lang} value={o.status === "REQUESTED" ? o.requestStatus : o.status} /> {portalLabel(o.shippingMethod, lang)} ·{" "}
           {fill(t.sentOn, { date: fmtDateTime(o.requestedAt, BD_TZ) })}

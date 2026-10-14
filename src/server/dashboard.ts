@@ -204,15 +204,15 @@ export async function adminInbox(actor: Actor): Promise<InboxPanel[]> {
   const customer = { select: { name: true } };
   const [buyCount, buy, shipCount, ship, payCount, pay, issueCount, issues] = await Promise.all([
     prisma.order.count({ where: awaitingQuoteWhere }),
-    prisma.order.findMany({ where: awaitingQuoteWhere, orderBy: { requestedAt: "desc" }, take, select: { id: true, number: true, requestedAt: true, source: true, customer } }),
+    prisma.order.findMany({ where: awaitingQuoteWhere, orderBy: { requestedAt: "desc" }, take, select: { id: true, number: true, requestedAt: true, source: true, placedByAccount: { select: { kind: true } }, customer } }),
     prisma.shippingOrder.count({ where: shipWhere }),
-    prisma.shippingOrder.findMany({ where: shipWhere, orderBy: { createdAt: "desc" }, take, select: { id: true, number: true, createdAt: true, source: true, customer } }),
+    prisma.shippingOrder.findMany({ where: shipWhere, orderBy: { createdAt: "desc" }, take, select: { id: true, number: true, createdAt: true, source: true, placedByAccount: { select: { kind: true } }, customer } }),
     prisma.paymentSubmission.count({ where: payWhere }),
     prisma.paymentSubmission.findMany({ where: payWhere, orderBy: { createdAt: "desc" }, take, select: { id: true, number: true, createdAt: true, customer } }),
     prisma.issue.count({ where: issueWhere }),
     prisma.issue.findMany({ where: issueWhere, orderBy: { createdAt: "desc" }, take, select: { id: true, number: true, createdAt: true, type: true, order: { select: { customer } } } }),
   ]);
-  const via = (source: string) => (source === "PORTAL" ? "Portal" : "Staff");
+  const via = (r: { source: string; placedByAccount: { kind: string } | null }) => (r.placedByAccount?.kind === "AGENT" ? "Agent" : r.source === "PORTAL" ? "Portal" : "Staff");
   return [
     {
       key: "buy",
@@ -220,7 +220,7 @@ export async function adminInbox(actor: Actor): Promise<InboxPanel[]> {
       hint: "waiting for China's quotation",
       href: "/requests?rs=AWAITING_QUOTE",
       count: buyCount,
-      items: buy.map((o) => ({ id: o.id, no: docNo("order", o.number), customer: o.customer.name, at: o.requestedAt, href: `/requests/${o.id}`, tag: via(o.source) })),
+      items: buy.map((o) => ({ id: o.id, no: docNo("order", o.number), customer: o.customer.name, at: o.requestedAt, href: `/requests/${o.id}`, tag: via(o) })),
     },
     {
       key: "ship",
@@ -228,7 +228,7 @@ export async function adminInbox(actor: Actor): Promise<InboxPanel[]> {
       hint: "goods not received in China yet",
       href: "/shipping-orders?status=REQUESTED",
       count: shipCount,
-      items: ship.map((s) => ({ id: s.id, no: docNo("shippingOrder", s.number), customer: s.customer.name, at: s.createdAt, href: `/shipping-orders/${s.id}`, tag: via(s.source) })),
+      items: ship.map((s) => ({ id: s.id, no: docNo("shippingOrder", s.number), customer: s.customer.name, at: s.createdAt, href: `/shipping-orders/${s.id}`, tag: via(s) })),
     },
     {
       key: "payments",

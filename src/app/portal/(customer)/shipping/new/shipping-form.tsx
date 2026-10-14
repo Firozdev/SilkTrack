@@ -8,6 +8,7 @@ import { portalShippingAction } from "../../../actions";
 import type { Dict } from "../../../i18n";
 import type { RateCard } from "@/lib/shipping-estimate";
 import { EstimateBox } from "../../estimate-box";
+import { CustomerPicker, type PickCustomer } from "../../customer-picker";
 
 export type ShippingItemInit = { id: string; productName: string; description: string; quantity: number; courierName: string; trackingNo: string; files: number };
 export type ShippingInit = { id: string; shippingMethod: "AIR" | "SEA"; qaRequested: boolean; declaredWeightKg: string; declaredCbm: string; customerNotes: string; items: ShippingItemInit[] };
@@ -19,12 +20,15 @@ export function PortalShippingForm({
   initial,
   action = portalShippingAction,
   submitLabel,
+  customers,
 }: {
   t: Dict;
   rates: RateCard;
   initial?: ShippingInit;
   action?: (p: ActionState, fd: FormData) => Promise<ActionState>;
   submitLabel?: string;
+  /** Agents: their customers, to choose who it is for. */
+  customers?: PickCustomer[];
 }) {
   const [method, setMethod] = useState<"AIR" | "SEA">(initial?.shippingMethod ?? "AIR");
   const [weight, setWeight] = useState(initial?.declaredWeightKg ?? "");
@@ -37,6 +41,7 @@ export function PortalShippingForm({
   return (
     <ActionForm action={action} submitLabel={submitLabel ?? t.sendShipping} className="max-w-4xl">
       {initial && <input type="hidden" name="id" value={initial.id} />}
+      {customers && <CustomerPicker t={t} customers={customers} />}
       <Card title={t.productsTracking}>
         <p className="mb-3 text-xs text-gray-500">{t.trackingLater}</p>
         <div className="space-y-3">

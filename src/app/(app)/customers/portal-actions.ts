@@ -1,25 +1,16 @@
 "use server";
 
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { formAction } from "@/lib/action";
 import { fields } from "@/lib/forms";
 import { whatsappLink } from "@/lib/notify";
+import { origin } from "@/lib/origin";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { approveAccount, createResetToken, inviteCustomer, rejectAccount, setAccountDisabled } from "@/server/portal-auth";
 
 const idOf = (fd: FormData) => z.object({ id: z.string().min(1) }).parse(fields(fd)).id;
-
-/** Public origin of this request (behind Caddy / a tunnel the proxy sets the host). */
-async function origin() {
-  if (process.env.AUTH_URL) return new URL(process.env.AUTH_URL).origin;
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
-}
 
 export const approveAction = formAction(async (fd) => {
   const user = await requireUser();
@@ -42,6 +33,7 @@ export const disableAction = formAction(async (fd) => {
   const { disabled } = z.object({ disabled: z.enum(["yes", "no"]) }).parse(fields(fd));
   await setAccountDisabled(user, idOf(fd), disabled === "yes");
   revalidatePath("/customers", "layout");
+  revalidatePath("/agents");
   return { ok: true, message: disabled === "yes" ? "Disabled and logged out." : "Enabled." };
 });
 

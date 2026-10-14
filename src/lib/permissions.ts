@@ -27,6 +27,7 @@ export const ACTIONS = [
   "audit:view",
   "report:profit",
   "dashboard:adminInbox", // "New Requests" panels on the dashboard
+  "agent:manage", // create agent logins, assign customers to agents
   "price:viewSelling", // BDT selling price, margin, profit (PURCHASE: selling only via User.canSetSellingPrice)
   "cost:viewChina", // RMB cost
 ] as const;

@@ -43,7 +43,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
       },
     }),
     prisma.portalAccount.findMany({ where: { status: "PENDING" }, orderBy: { createdAt: "asc" }, include: { customer: { select: { id: true, code: true } } } }),
-    prisma.portalAccount.groupBy({ by: ["status"], _count: true }),
+    prisma.portalAccount.groupBy({ by: ["status"], where: { kind: "CUSTOMER" }, _count: true }),
   ]);
   const matches = await Promise.all(pending.map((a) => (a.customerId ? Promise.resolve([]) : matchingCustomers(a.phone))));
   const count = (s: PortalAccountStatus) => counts.find((c) => c.status === s)?._count ?? 0;

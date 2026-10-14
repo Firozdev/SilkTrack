@@ -225,6 +225,20 @@ const en = {
   inviteTitle: "Welcome, {name}!",
   inviteIntro: "Choose a password to see your orders, shipments and bills online. Next time, log in with your mobile number {phone}.",
   inviteExpired: "This invitation link has expired or was already used. Message us on WhatsApp for a new one.",
+  // Agents
+  agentHello: "Hello, {name}",
+  agentTag: "Agent",
+  myCustomers: "My customers",
+  noCustomers: "No customers yet – add your first one below.",
+  colCustomer: "Customer",
+  addCustomer: "Add a customer",
+  addCustomerIntro: "Add a customer you order for. Then choose them when you place a request.",
+  customerAdded: "{name} added ({code}).",
+  customerFor: "Customer *",
+  chooseCustomer: "Choose a customer",
+  needCustomerFirst: "Add a customer on your home page first, then place the request for them.",
+  forCustomer: "Customer: {name} ({code})",
+  shipIntroAgent: "Your customer bought the goods. Ask the supplier to send them to our China warehouse with the customer's code (shown next to each customer) on the parcel, and tell us the tracking numbers here.",
 };
 
 export type Dict = typeof en;
@@ -437,6 +451,19 @@ const bn: Dict = {
   inviteTitle: "স্বাগতম, {name}!",
   inviteIntro: "অনলাইনে আপনার অর্ডার, শিপমেন্ট ও বিল দেখতে একটি পাসওয়ার্ড দিন। পরের বার আপনার মোবাইল নম্বর {phone} দিয়ে লগ ইন করবেন।",
   inviteExpired: "এই আমন্ত্রণ লিংকের মেয়াদ শেষ অথবা আগেই ব্যবহার হয়েছে। নতুন লিংকের জন্য WhatsApp-এ মেসেজ দিন।",
+  agentHello: "স্বাগতম, {name}",
+  agentTag: "এজেন্ট",
+  myCustomers: "আমার কাস্টমার",
+  noCustomers: "এখনো কোনো কাস্টমার নেই – নিচে প্রথম কাস্টমার যোগ করুন।",
+  colCustomer: "কাস্টমার",
+  addCustomer: "কাস্টমার যোগ করুন",
+  addCustomerIntro: "যে কাস্টমারের জন্য অর্ডার করবেন তাকে যোগ করুন। তারপর অনুরোধ পাঠানোর সময় তাকে বেছে নিন।",
+  customerAdded: "{name} যোগ হয়েছে ({code})।",
+  customerFor: "কাস্টমার *",
+  chooseCustomer: "কাস্টমার বেছে নিন",
+  needCustomerFirst: "আগে হোম পেজে একজন কাস্টমার যোগ করুন, তারপর তার জন্য অনুরোধ পাঠান।",
+  forCustomer: "কাস্টমার: {name} ({code})",
+  shipIntroAgent: "আপনার কাস্টমার মাল কিনেছেন। সাপ্লায়ারকে বলুন পার্সেলে কাস্টমারের কোড (প্রতিটি কাস্টমারের পাশে দেখানো) লিখে আমাদের চীনের ওয়্যারহাউসে পাঠাতে, আর এখানে ট্র্যাকিং নম্বর দিন।",
 };
 
 export const DICTS: Record<Lang, Dict> = { en, bn };
@@ -475,6 +502,9 @@ const ERRORS_BN: [RegExp, string][] = [
   [/^Use the invitation link we sent you/, "প্রথমে আমাদের পাঠানো আমন্ত্রণ লিংক থেকে পাসওয়ার্ড সেট করুন।"],
   [/^You already have an invitation/, "আপনাকে আগেই আমন্ত্রণ পাঠানো হয়েছে। WhatsApp-এ পাঠানো লিংকটি ব্যবহার করুন, বা নতুন লিংকের জন্য যোগাযোগ করুন।"],
   [/^This invitation link has expired/, "এই আমন্ত্রণ লিংকের মেয়াদ শেষ বা আগেই ব্যবহার হয়েছে। নতুন লিংকের জন্য আমাদের জানান।"],
+  [/^Choose the customer this is for/, "অনুরোধটি কোন কাস্টমারের জন্য, বেছে নিন"],
+  [/^We already have a customer with this mobile number/, "এই মোবাইল নম্বরে আমাদের একজন কাস্টমার আগেই আছেন। আমাদের মেসেজ দিন, আমরা তাকে আপনার তালিকায় যোগ করে দেব।"],
+  [/^This customer is already in your list \((.*)\)/, "এই কাস্টমার আগেই আপনার তালিকায় আছেন ($1)"],
   [/^Something went wrong/, "কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করুন।"],
   [/not found$/i, "পাওয়া যায়নি"],
 ];

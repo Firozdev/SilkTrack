@@ -5,6 +5,7 @@ import { BD_TZ, fmtDateTime, fmtDay } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
 import { portalShippingOrder } from "@/server/portal";
+import { ownerOf } from "@/server/portal-access";
 import { portalTrackingAction } from "../../../actions";
 import { fill } from "../../../i18n";
 import { portalLabel } from "../../../labels";
@@ -22,20 +23,24 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
   const acc = await requirePortalAccount();
   const { lang, t } = await getDict();
   const { id } = await params;
-  const s = await portalShippingOrder(acc.customer.id, id);
-  if (!s) notFound();
-  const [due, rates] = await Promise.all([amountDue(acc.customer.id, { kind: "shipping", id: s.id }), rateCardFor(s.shippingRateId)]);
+  const cid = await ownerOf(acc, "shipping", id);
+  const s = cid ? await portalShippingOrder(cid, id) : null;
+  if (!cid || !s) notFound();
+  const [due, rates] = await Promise.all([amountDue(cid, { kind: "shipping", id: s.id }), rateCardFor(s.shippingRateId)]);
   const air = s.shippingMethod === "AIR";
   const money = (label: string, v: { gt(n: number): boolean } | null, text: string): [string, string][] => (v?.gt(0) ? [[label, text]] : []);
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">{docNo("shippingOrder", s.number)}</h1>
+        <h1 className="text-xl font-semibold">
+          {docNo("shippingOrder", s.number)}
+          {acc.kind === "AGENT" && <span className="mt-0.5 block text-sm font-normal text-gray-500">{fill(t.forCustomer, { name: s.customer.name, code: s.customer.code })}</span>}
+        </h1>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
           <PStatus lang={lang} value={s.status} /> {portalLabel(s.shippingMethod, lang)} · {fill(t.sentOn, { date: fmtDateTime(s.createdAt, BD_TZ) })}
         </p>
       </div>
-      {s.status === "REQUESTED" && <Alert tone="info">{fill(t.parcelHint, { code: acc.customer.code })}</Alert>}
+      {s.status === "REQUESTED" && <Alert tone="info">{fill(t.parcelHint, { code: s.customer.code })}</Alert>}
       {portalShippingEditable(s) && <EditBar t={t} kind="shipping" id={s.id} editHref={`/portal/shipping/${s.id}/edit`} />}
       {s.status === "INVOICED" && s.balance.gt(0) && <Alert tone="warn">{fill(t.invoiceReady, { amount: fmtBdt(s.balance) })}</Alert>}
 

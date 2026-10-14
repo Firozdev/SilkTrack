@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { A, Badge, Card, Dl, PageHeader, Table, btnCls, btnPrimaryCls, tdCls } from "@/components/ui";
+import { A, Badge, Card, Dl, PageHeader, Table, btnCls, btnPrimaryCls, inputCls, tdCls } from "@/components/ui";
 import { fmtDateTime } from "@/lib/dates";
 import { docNo, fmtBdt, humanize } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/session";
 import { customerLedger } from "@/server/ledger";
+import { ActionForm } from "@/components/action-form";
+import { can } from "@/lib/permissions";
+import { assignAgentAction } from "../../agents/actions";
 import { PortalPanel } from "./portal-panel";
 
 export default async function CustomerPage({ params }: PageProps<"/customers/[id]">) {
@@ -17,10 +20,12 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
       orders: { orderBy: { requestedAt: "desc" }, include: { _count: { select: { lines: true } } } },
       samples: { orderBy: { requestedAt: "desc" }, include: { lines: true, order: { select: { number: true } } } },
       shippingOrders: { orderBy: { createdAt: "desc" }, include: { items: true } },
+      agentAccount: { select: { name: true, phone: true } },
     },
   });
   if (!c) notFound();
   const ledger = await customerLedger(c.id);
+  const agents = can(user.role, "agent:manage") ? await prisma.portalAccount.findMany({ where: { kind: "AGENT", status: { not: "DISABLED" } }, orderBy: { name: "asc" }, select: { id: true, name: true, phone: true } }) : null;
   return (
     <>
       <PageHeader
@@ -47,8 +52,22 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
               ["Email", c.email],
               ["Address", c.address],
               ["District / area", [c.district, c.area].filter(Boolean).join(" / ")],
+              ["Agent", c.agentAccount ? `${c.agentAccount.name} · ${c.agentAccount.phone}` : "—"],
             ]}
           />
+          {agents && (
+            <ActionForm action={assignAgentAction} submitLabel="Save agent" variant="default" inline className="mt-3">
+              <input type="hidden" name="customerId" value={c.id} />
+              <select name="agentId" defaultValue={c.agentAccountId ?? ""} className={`${inputCls} max-w-[14rem]`}>
+                <option value="">No agent</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} · {a.phone}
+                  </option>
+                ))}
+              </select>
+            </ActionForm>
+          )}
         </Card>
         <PortalPanel customer={c} tz={user.timezone} />
         <Card title="Ledger">

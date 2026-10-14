@@ -102,7 +102,7 @@ describe("Customer portal – accounts and login", () => {
     const acc = await activeCustomer("01711000000");
     const { token } = await createSession(acc.id);
     expect(await prisma.portalSession.count({ where: { tokenHash: token } })).toBe(0); // only the hash is stored
-    expect((await accountForSession(token))?.customer.id).toBe(acc.customerId);
+    expect((await accountForSession(token))?.customer?.id).toBe(acc.customerId);
     expect(await accountForSession("forged-token")).toBeNull();
     expect(await accountForSession(token, new Date(Date.now() + 31 * 86_400_000))).toBeNull();
 
@@ -260,11 +260,11 @@ describe("Customer portal – files, quote approval", () => {
     const c = await prisma.comment.create({ data: { orderId: order.id, authorId: cs.id, body: "internal" } });
     const commentFile = await prisma.attachment.create({ data: { ...base, kind: "OTHER", uploadedById: cs.id, orderId: order.id, commentId: c.id } });
 
-    expect(await portalAttachment(a.customerId!, own.id)).not.toBeNull();
-    expect(await portalAttachment(a.customerId!, qa.id)).not.toBeNull();
-    expect(await portalAttachment(a.customerId!, supplierInvoice.id)).toBeNull();
-    expect(await portalAttachment(a.customerId!, commentFile.id)).toBeNull();
-    expect(await portalAttachment(b.customerId!, own.id)).toBeNull();
+    expect(await portalAttachment([a.customerId!], own.id)).not.toBeNull();
+    expect(await portalAttachment([a.customerId!], qa.id)).not.toBeNull();
+    expect(await portalAttachment([a.customerId!], supplierInvoice.id)).toBeNull();
+    expect(await portalAttachment([a.customerId!], commentFile.id)).toBeNull();
+    expect(await portalAttachment([b.customerId!], own.id)).toBeNull();
     const view = await portalShippingOrder(a.customerId!, so.id);
     expect(view?.attachments.map((x) => x.id).sort()).toEqual([own.id, qa.id].sort());
   });

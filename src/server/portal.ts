@@ -20,8 +20,9 @@ import { quoteBreakdown } from "./quote-breakdown";
 const VISIBLE_FILE: Prisma.AttachmentWhereInput = { kind: { not: "SUPPLIER_INVOICE" }, commentId: null, issueId: null, claimId: null, supplierOrderId: null, receivingId: null };
 const fileSelect = { where: VISIBLE_FILE, orderBy: { createdAt: "asc" as const }, select: { id: true, fileName: true, mimeType: true, uploadedByAccountId: true } };
 
-/** The attachment if this customer may download it, else null. */
-export function portalAttachment(customerId: string, id: string) {
+/** The attachment if one of these customers (the login's own, or an agent's) may download it, else null. */
+export function portalAttachment(customerIds: string[], id: string) {
+  const customerId = { in: customerIds };
   return prisma.attachment.findFirst({
     where: {
       id,
@@ -41,34 +42,44 @@ const receiptSelect = { customerConfirmedAt: true, customerNote: true, customerR
 const paidOf = (rows: { type: string; amountBdt: Decimal }[]) => sum(rows.map((p) => (p.type === "REFUND" ? D(p.amountBdt).neg() : D(p.amountBdt))));
 
 export async function portalDashboard(customerId: string) {
-  const [orders, shipping, samples, ledger] = await Promise.all([
+  const [lists, ledger] = await Promise.all([portalLists([customerId]), customerLedger(customerId)]);
+  return { ...lists, ledger };
+}
+
+/** Requests, shipping orders and samples of these customers (an agent sees all of theirs). */
+export async function portalLists(customerIds: string[]) {
+  const customerId = { in: customerIds };
+  const customer = { select: { code: true, name: true } };
+  const [orders, shipping, samples] = await Promise.all([
     prisma.order.findMany({
       where: { customerId },
       orderBy: { requestedAt: "desc" },
       take: 100,
-      select: { id: true, number: true, status: true, requestStatus: true, requestedAt: true, shippingMethod: true, lines: { select: { productName: true, quantity: true }, orderBy: { lineNo: "asc" } } },
+      select: { id: true, number: true, status: true, requestStatus: true, requestedAt: true, shippingMethod: true, customer, lines: { select: { productName: true, quantity: true }, orderBy: { lineNo: "asc" } } },
     }),
     prisma.shippingOrder.findMany({
       where: { customerId },
       orderBy: { createdAt: "desc" },
       take: 100,
-      select: { id: true, number: true, status: true, createdAt: true, shippingMethod: true, invoiceTotalBdt: true, items: { select: { productName: true, quantity: true }, orderBy: { lineNo: "asc" } } },
+      select: { id: true, number: true, status: true, createdAt: true, shippingMethod: true, invoiceTotalBdt: true, customer, items: { select: { productName: true, quantity: true }, orderBy: { lineNo: "asc" } } },
     }),
     prisma.sample.findMany({
       where: { customerId },
       orderBy: { requestedAt: "desc" },
       take: 100,
-      select: { id: true, number: true, status: true, requestedAt: true, lines: { select: { productName: true, quantity: true } } },
+      select: { id: true, number: true, status: true, requestedAt: true, customer, lines: { select: { productName: true, quantity: true } } },
     }),
-    customerLedger(customerId),
   ]);
-  return { orders, shipping, samples, ledger };
+  return { orders, shipping, samples };
 }
+
+const ownerSelect = { customer: { select: { code: true, name: true } } } as const;
 
 export async function portalOrder(customerId: string, orderId: string) {
   const o = await prisma.order.findFirst({
     where: { id: orderId, customerId },
     select: {
+      ...ownerSelect,
       id: true,
       number: true,
       status: true,
@@ -141,6 +152,7 @@ export async function portalShippingOrder(customerId: string, id: string) {
   const s = await prisma.shippingOrder.findFirst({
     where: { id, customerId },
     select: {
+      ...ownerSelect,
       id: true,
       number: true,
       status: true,
@@ -192,6 +204,7 @@ export async function portalSample(customerId: string, id: string) {
   const s = await prisma.sample.findFirst({
     where: { id, customerId },
     select: {
+      ...ownerSelect,
       id: true,
       number: true,
       status: true,

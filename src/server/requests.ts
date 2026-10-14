@@ -110,13 +110,17 @@ export type PortalRequestInput = Omit<RequestInput, "customer" | "type" | "prior
  * A customer submits a request in the portal. No duplicate-link check (it would
  * reveal other customers' orders); it goes straight to the China team like a staff request.
  */
-export async function createPortalRequest(customerId: string, input: PortalRequestInput) {
-  const res = await insertRequest({ ...input, customer: { id: customerId, name: "", phone: "", address: "" }, allowDuplicates: true }, { source: "PORTAL", customerId });
-  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_REQUEST", title: `Portal request: ${docNo("order", res.order.number)}`, body: `${res.order.lines.length} product(s) from a customer – sent to the China team for a quotation.`, orderId: res.order.id });
+export async function createPortalRequest(customerId: string, input: PortalRequestInput, placedBy?: PlacedBy) {
+  const res = await insertRequest({ ...input, customer: { id: customerId, name: "", phone: "", address: "" }, allowDuplicates: true }, { source: "PORTAL", customerId, accountId: placedBy?.accountId });
+  const from = placedBy?.agentName ? `agent ${placedBy.agentName}` : "a customer";
+  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_REQUEST", title: `Portal request: ${docNo("order", res.order.number)}`, body: `${res.order.lines.length} product(s) from ${from} – sent to the China team for a quotation.`, orderId: res.order.id });
   return res;
 }
 
-async function insertRequest(input: RequestInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string }) {
+/** The portal login that placed a request: the customer's own, or their agent's (agentName set). */
+export type PlacedBy = { accountId: string; agentName?: string };
+
+async function insertRequest(input: RequestInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string; accountId?: string }) {
   const actorId = by.source === "STAFF" ? by.actorId : null;
   if (input.lines.length === 0) throw new UserError("Add at least one product");
 
@@ -146,6 +150,7 @@ async function insertRequest(input: RequestInput, by: { actorId: string; source:
         customerId,
         source: by.source,
         createdById: actorId,
+        placedByAccountId: by.source === "PORTAL" ? (by.accountId ?? null) : null,
         // New requests go straight to the China team for a quotation (decision 2026-10-14).
         requestStatus: "SENT_TO_CHINA",
         type,
