@@ -7,6 +7,7 @@ import { D, cbmOf, sum } from "@/lib/money";
 import { docNo } from "@/lib/format";
 import { logChanges } from "@/lib/audit";
 import { notify } from "./notify";
+import { notifyQaTasks, qaBlockedMessage, qaBlockingOrders } from "./order-qa";
 import { setLineStatus } from "./status";
 import { allocateFreight, assignToShipment, capacityWarning, recalcTotals, suggestShipment } from "./shipments";
 import type { Actor } from "./actor";
@@ -158,11 +159,13 @@ export async function receiveParcel(actor: Actor, input: ReceiveInput, now = new
     }
 
     let shipment = null;
-    if (input.shipmentId) {
+    // A QA order's goods wait at the warehouse until China records the QA test.
+    const qaWaiting = await qaBlockingOrders(tx, orderLineIds);
+    if (input.shipmentId && !qaWaiting.length) {
       const target = input.shipmentId === "auto" ? await suggestShipment(tx, input.shippingMethod, now) : { id: input.shipmentId };
       shipment = await assignToShipment(tx, actor.id, rec.id, target.id, now);
     }
-    return { rec, shipment, issues: created, orderIds: [...new Set(orderIds.map((o) => o.orderId))] };
+    return { rec, shipment, qaWaiting, issues: created, orderIds: [...new Set(orderIds.map((o) => o.orderId))] };
   });
 
   const orders = await prisma.order.findMany({ where: { id: { in: result.orderIds } }, select: { id: true, number: true, customerId: true } });
@@ -176,7 +179,9 @@ export async function receiveParcel(actor: Actor, input: ReceiveInput, now = new
     const o = orders.find((x) => x.id === i.orderId);
     await notify("ISSUE_REPORTED", { issue: i, order: o, customerId: o?.customerId, ref: o ? docNo("order", o.number) : docNo("issue", i.number), staffLink: `/issues?id=${i.id}` }, { problem: i.description, where: "China warehouse" }, cause);
   }
-  return { receiving: result.rec, shipment: result.shipment, warning: result.shipment ? capacityWarning(result.shipment) : null };
+  await notifyQaTasks(result.orderIds);
+  const qaNote = result.qaWaiting.length ? `Not added to a shipment yet: ${qaBlockedMessage(result.qaWaiting).replace(/^Record/, "record")}.` : null;
+  return { receiving: result.rec, shipment: result.shipment, warning: qaNote ?? (result.shipment ? capacityWarning(result.shipment) : null) };
 }
 
 /** Merge several ready parcels into one carton set with new weight / CBM. */

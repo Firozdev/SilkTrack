@@ -32,7 +32,8 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
   const q = o.quote;
   const awaiting = q?.status === "SENT_TO_CUSTOMER";
   const expired = !!q && q.validUntil < today(BD_TZ);
-  const files = o.attachments;
+  const files = o.attachments.filter((f) => f.kind !== "QA_PHOTO");
+  const qaPhotos = o.attachments.filter((f) => f.kind === "QA_PHOTO");
   return (
     <div className="space-y-5">
       <div>
@@ -154,6 +155,22 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
         problem={o.customerReportedProblem}
       />
       {shipping && o.status !== "CANCELLED" && <ShipmentBox t={t} lang={lang} data={shipping} showProducts={o.lines.length > 1} />}
+      {o.qaRequested && (
+        <Card title={t.qaTitle}>
+          {o.qaResult ? (
+            <>
+              <p className="text-sm">
+                <span className={`rounded px-2 py-0.5 text-xs font-semibold ${o.qaResult === "PASSED" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>{o.qaResult === "PASSED" ? t.passed : t.failed}</span>
+                <span className="ml-2 text-gray-500">{fmtDateTime(o.qaAt, BD_TZ)}</span>
+              </p>
+              {o.qaNotes && <p className="mt-2 whitespace-pre-line text-sm text-gray-700">{o.qaNotes}</p>}
+              <Attachments items={qaPhotos} base="/portal/files" customerTag={null} />
+            </>
+          ) : (
+            <p className="text-sm text-gray-500">{t.qaWaiting}</p>
+          )}
+        </Card>
+      )}
       <FilesCard t={t} files={files} kind="order" id={o.id} canUpload={!["CANCELLED", "DELIVERED"].includes(o.status)} />
 
       {(o.invoices.length > 0 || o.payments.length > 0) && (

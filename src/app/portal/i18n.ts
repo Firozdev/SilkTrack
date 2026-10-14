@@ -309,6 +309,11 @@ const en = {
   versionSaved: "Saved.",
   downloadVersion: "Download PDF",
   backToOrder: "Back to order",
+  // Buy for Me QA test
+  qaRequired: "QA test required",
+  qaRequiredHint: "We check your goods at our China warehouse after they arrive and send you the result with photos before shipping.",
+  qaTitle: "QA test",
+  qaWaiting: "Requested – we test your goods after they arrive at our China warehouse.",
 };
 
 export type Dict = typeof en;
@@ -601,6 +606,10 @@ const bn: Dict = {
   versionSaved: "সংরক্ষিত হয়েছে।",
   downloadVersion: "PDF ডাউনলোড",
   backToOrder: "অর্ডারে ফিরে যান",
+  qaRequired: "QA টেস্ট দরকার",
+  qaRequiredHint: "আপনার মাল আমাদের চীনের ওয়্যারহাউসে পৌঁছানোর পর আমরা পরীক্ষা করব এবং শিপিংয়ের আগে ছবিসহ ফলাফল পাঠাব।",
+  qaTitle: "QA টেস্ট",
+  qaWaiting: "অনুরোধ করা হয়েছে – মাল চীনের ওয়্যারহাউসে পৌঁছানোর পর আমরা পরীক্ষা করব।",
 };
 
 export const DICTS: Record<Lang, Dict> = { en, bn };

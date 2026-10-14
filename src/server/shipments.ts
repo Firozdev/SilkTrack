@@ -9,6 +9,7 @@ import { docNo } from "@/lib/format";
 import { logChanges, diffFields } from "@/lib/audit";
 import { queueCustomerMessage } from "@/lib/notify";
 import { notify } from "./notify";
+import { qaBlockedMessage, qaBlockingOrders } from "./order-qa";
 import { rateForConversion } from "./rates";
 import { setLineStatus } from "./status";
 import type { Actor } from "./actor";
@@ -98,6 +99,8 @@ export function capacityWarning(s: { grossWeightKg: Prisma.Decimal; cbm: Prisma.
 export async function assignToShipment(tx: Tx, actorId: string, receivingId: string, shipmentId: string, now = new Date()) {
   const rec = await tx.receiving.findUniqueOrThrow({ where: { id: receivingId }, include: { shipment: true, lines: { select: { orderLineId: true } } } });
   if (rec.status === "REPACKED") throw new UserError("This parcel was repacked into another parcel");
+  const qaWaiting = await qaBlockingOrders(tx, rec.lines.map((l) => l.orderLineId));
+  if (qaWaiting.length) throw new UserError(qaBlockedMessage(qaWaiting));
   if (rec.shipment && !isAcceptingOrOpen(rec.shipment)) throw new UserError(`${rec.shipment.code} is already ${rec.shipment.status.toLowerCase()} – items can't be moved`);
   const target = await tx.shipment.findUniqueOrThrow({ where: { id: shipmentId } });
   if (target.method !== rec.shippingMethod) throw new UserError(`${target.code} is a ${target.method.toLowerCase()} shipment; this parcel ships by ${rec.shippingMethod.toLowerCase()}`);

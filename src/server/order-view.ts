@@ -12,6 +12,7 @@ export async function getOrderView(orderId: string, viewer: Viewer) {
       customer: true,
       createdBy: { select: { name: true } },
       placedByAccount: { select: { name: true, kind: true } },
+      qaBy: { select: { name: true } },
       lines: {
         orderBy: { lineNo: "asc" },
         include: {

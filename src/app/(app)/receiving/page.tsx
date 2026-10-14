@@ -7,6 +7,7 @@ import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { findByTracking, listReceivings } from "@/server/receiving";
+import { qaTodo } from "@/server/order-qa";
 import { findShippingByTracking, shippingNo } from "@/server/shipping-orders";
 
 export default async function ReceivingPage({ searchParams }: PageProps<"/receiving">) {
@@ -16,7 +17,8 @@ export default async function ReceivingPage({ searchParams }: PageProps<"/receiv
   const status = (["READY_TO_SHIP", "IN_SHIPMENT", "REPACKED"] as const).find((s) => s === sp.status);
   const canReceive = can(user.role, "receiving:edit");
 
-  const [matches, shippingMatches, list, awaiting] = await Promise.all([
+  const [qa, matches, shippingMatches, list, awaiting] = await Promise.all([
+    qaTodo(),
     q ? findByTracking(q) : Promise.resolve([]),
     q ? findShippingByTracking(q) : Promise.resolve([]),
     listReceivings(status),
@@ -31,6 +33,22 @@ export default async function ReceivingPage({ searchParams }: PageProps<"/receiv
   return (
     <>
       <PageHeader title="China warehouse receiving" />
+      {qa.length > 0 && (
+        <Card title={`QA tests to do (${qa.length})`} className="mb-5 border-amber-300">
+          <p className="mb-2 text-sm text-gray-500">The customer asked for a QA test. Record Pass / Fail with notes and photos on the request – the goods can&apos;t go into a shipment until then.</p>
+          <Table head={["Request", "Customer", "Products"]}>
+            {qa.map((o) => (
+              <tr key={o.id}>
+                <td className={tdCls}>
+                  <A href={`/requests/${o.id}`}>{docNo("order", o.number)}</A>
+                </td>
+                <td className={tdCls}>{o.customer.code}</td>
+                <td className={tdCls}>{o.lines.map((l) => `${l.productName} × ${l.quantity}`).join(", ")}</td>
+              </tr>
+            ))}
+          </Table>
+        </Card>
+      )}
       {canReceive && (
         <Card title="Receive a parcel" className="mb-5">
           <form className="flex max-w-xl flex-wrap gap-2 sm:flex-nowrap">

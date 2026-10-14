@@ -9,6 +9,7 @@ import type { Actor } from "./actor";
 import { ORDER_FLOW } from "./status";
 import { purchaseQueue } from "./purchasing";
 import { acceptingShipments } from "./shipments";
+import { qaTodo } from "./order-qa";
 import { awaitingQuoteWhere } from "./requests";
 import { submissionNo } from "./payment-submissions";
 
@@ -49,13 +50,14 @@ export async function bdDashboard() {
 /** China (purchase team) view. */
 export async function chinaDashboard(now = new Date()) {
   const day = today(CN_TZ, now);
-  const [queue, toPrice, awaiting, readyToShip, shipments, openIssues] = await Promise.all([
+  const [queue, toPrice, awaiting, readyToShip, shipments, openIssues, qaToDo] = await Promise.all([
     purchaseQueue(),
     prisma.order.count({ where: { requestStatus: "NEW", status: { not: "ON_HOLD" } } }),
     prisma.supplierOrder.findMany({ where: { status: { in: ["PURCHASED", "SHIPPED_BY_SUPPLIER"] } }, select: { expectedArrivalAt: true } }),
     prisma.receiving.count({ where: { status: "READY_TO_SHIP" } }),
     acceptingShipments(undefined, now),
     prisma.issue.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, source: "CHINA_RECEIVING" } }),
+    qaTodo().then((l) => l.length),
   ]);
   const ordersIn = (pred: (l: (typeof queue)[number]) => boolean) => new Set(queue.filter(pred).map((l) => l.order.id)).size;
   return {
@@ -67,6 +69,7 @@ export async function chinaDashboard(now = new Date()) {
     lateArrivals: awaiting.filter((a) => a.expectedArrivalAt && a.expectedArrivalAt < day).length,
     readyToShip,
     openIssues,
+    qaToDo,
     shipments,
   };
 }

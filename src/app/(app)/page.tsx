@@ -138,6 +138,7 @@ export default async function Dashboard() {
             <StatTile label="Request upfront payment" value={china.needPaymentRequest} hint={`${china.waitingForPayment} waiting for BD`} href="/purchasing" />
             <StatTile label="Awaiting arrival" value={china.awaitingArrival} hint={china.lateArrivals ? `${china.lateArrivals} late` : "none late"} href="/receiving" tone={china.lateArrivals ? "danger" : "default"} />
             <StatTile label="Ready to ship" value={china.readyToShip} hint="not in a shipment" href="/receiving?status=READY_TO_SHIP" />
+            <StatTile label="QA tests to do" value={china.qaToDo} hint="Buy for Me, received" href="/receiving" tone={china.qaToDo ? "attention" : "default"} />
             <StatTile label="Open China issues" value={china.openIssues} href="/issues?source=CHINA_RECEIVING" tone={china.openIssues ? "danger" : "default"} />
           </TileRow>
           <Card title="Current shipments – weight and CBM vs capacity">

@@ -35,6 +35,8 @@ async function main() {
 
   const line = (productName: string, quantity: number) => ({ lineNo: 1, productName, quantity, trackingEvents: { create: { leg: "SUPPLIER_TO_CHINA" as const, status: "REQUESTED" as const, message: "Demo request" } } });
   const buyPortal = await prisma.order.create({ data: { customerId: portalCustomer.id, source: "PORTAL", requestStatus: "NEW", shippingMethod: "AIR", lines: { create: [line("Desk lamp (demo)", 2)] } } });
+  // A request where the customer asked for a QA test (China tests it after receiving, before shipping).
+  await prisma.order.create({ data: { customerId: portalCustomer.id, source: "PORTAL", requestStatus: "NEW", qaRequested: true, shippingMethod: "AIR", lines: { create: [line("Bluetooth speaker – QA test (demo)", 10)] } } });
   const buyStaff = await prisma.order.create({ data: { customerId: staffCustomer.id, source: "STAFF", createdById: admin.id, requestStatus: "NEW", shippingMethod: "SEA", lines: { create: [line("Office chair (demo)", 4)] } } });
 
   const item = (productName: string, quantity: number) => ({ lineNo: 1, productName, quantity });

@@ -109,7 +109,7 @@ const lineSchema = z.object({
 
 export const portalRequestAction = portalAction(async (fd) => {
   const acc = await requirePortalAccount();
-  const { customerId: picked, ...h } = z.object({ customerId: zStrOpt, shippingMethod: z.enum(["AIR", "SEA"]), targetBudgetBdt: zDecOpt, customerNotes: zStrOpt }).parse(fields(fd));
+  const { customerId: picked, ...h } = z.object({ customerId: zStrOpt, shippingMethod: z.enum(["AIR", "SEA"]), qaRequested: zBool, targetBudgetBdt: zDecOpt, customerNotes: zStrOpt }).parse(fields(fd));
   const customerId = await customerForNew(acc, picked);
   const lines = rows(fd, "lines").map((r) => lineSchema.parse(r));
   if (!lines.length) throw new UserError("Add at least one product");
@@ -215,7 +215,7 @@ export const portalReceiptAction = portalAction(async (fd, t) => {
 export const portalRequestUpdateAction = portalAction(async (fd) => {
   const acc = await requirePortalAccount();
   const { id } = z.object({ id: z.string().min(1) }).parse(fields(fd));
-  const h = z.object({ shippingMethod: z.enum(["AIR", "SEA"]), targetBudgetBdt: zDecOpt, customerNotes: zStrOpt }).parse(fields(fd));
+  const h = z.object({ shippingMethod: z.enum(["AIR", "SEA"]), qaRequested: zBool, targetBudgetBdt: zDecOpt, customerNotes: zStrOpt }).parse(fields(fd));
   const lines = rows(fd, "lines").map((r) => lineSchema.extend({ id: zStrOpt }).parse(r));
   const kept = lines.filter((l) => l.productName.trim() && l.quantity > 0);
   const ids = await updatePortalRequest(await requireOwner(acc, "order", id), id, {

@@ -47,6 +47,8 @@ export type RequestInput = {
   lines: LineInput[];
   /** Create even if a link was already requested. */
   allowDuplicates?: boolean;
+  /** Customer wants a QA test at the China warehouse (after receiving, before shipping). */
+  qaRequested?: boolean;
 };
 
 /** BULK when total quantity or target budget reaches the threshold setting. */
@@ -154,6 +156,7 @@ async function insertRequest(input: RequestInput, by: { actorId: string; source:
         type,
         typeOverridden: type !== suggested,
         shippingMethod: input.shippingMethod,
+        qaRequested: input.qaRequested ?? false,
         targetBudgetBdt: input.targetBudgetBdt,
         customerNotes: input.customerNotes,
         specialInstructions: input.specialInstructions,
@@ -404,7 +407,7 @@ export async function updatePortalRequest(customerId: string, orderId: string, i
   const ids = await prisma.$transaction(async (tx) => {
     await tx.order.update({
       where: { id: orderId },
-      data: { shippingMethod: input.shippingMethod, targetBudgetBdt: input.targetBudgetBdt ?? null, customerNotes: input.customerNotes ?? null, ...(order.typeOverridden ? {} : { type: suggested }) },
+      data: { shippingMethod: input.shippingMethod, qaRequested: input.qaRequested ?? order.qaRequested, targetBudgetBdt: input.targetBudgetBdt ?? null, customerNotes: input.customerNotes ?? null, ...(order.typeOverridden ? {} : { type: suggested }) },
     });
     if (removed.length) await tx.orderLine.deleteMany({ where: { id: { in: removed.map((l) => l.id) } } });
     const ids: string[] = [];
