@@ -61,7 +61,7 @@ describe("Customer portal – invoice PDF and my own versions", () => {
 
     // Pre-filled from our invoice
     const start = await prefillVersion(k, so.id);
-    expect(start.items).toEqual([expect.objectContaining({ qty: "12.5", unitPrice: "800.00" })]);
+    expect(start.items).toEqual([expect.objectContaining({ qty: "12.5", unitPrice: "800.00", description: expect.stringContaining("(per kg)") })]);
     expect(start.charges).toEqual([{ label: "Home delivery in Bangladesh", amount: "120.00" }]);
     expect(start.discount).toBe("20.00");
 
@@ -136,6 +136,17 @@ describe("Customer portal – invoice PDF and my own versions", () => {
     await expect(createVersion(k, so.id, { ...start, items: [] })).rejects.toThrow(/at least one line/);
     await expect(createVersion(k, so.id, { ...start, items: [{ description: "x", qty: "1", unitPrice: "-5" }] })).rejects.toThrow(/amount/);
     await expect(createVersion(k, so.id, start, new File(['<svg xmlns="http://www.w3.org/2000/svg"></svg>'], "l.svg", { type: "image/svg+xml" }))).rejects.toThrow(/PNG or JPG/);
+
+    // At most 10 versions per order (k already has 1)
+    for (let n = 2; n <= 10; n++) await createVersion(k, so.id, { ...start, label: `V${n}` });
+    await expect(createVersion(k, so.id, { ...start, label: "V11" })).rejects.toThrow(/up to 10 versions/);
+    expect(await createVersion(agent, so.id, { ...start, label: "Agent 2" })).toBeTruthy(); // the agent's own count is separate
+
+    // An empty account name isn't printed as a bare label
+    const plain = await createVersion(agent, so.id, { ...start, label: "No name", accounts: [{ provider: "Nagad", accountName: "", accountNumber: "01800-111111", notes: "" }] });
+    const pt = pdfText((await versionPdf(agent, plain.id))!.pdf);
+    expect(pt).toContain(squash("Account no.: 01800-111111"));
+    expect(pt).not.toContain(squash("Account name:"));
 
     // No invoice yet → nothing to copy
     const fresh = await createShippingOrder(cs, { customer: { id: k.customer!.id, name: "x", phone: "x", address: "x" }, shippingMethod: "AIR", qaRequested: false, items: [{ productName: "Box", quantity: 1 }] });

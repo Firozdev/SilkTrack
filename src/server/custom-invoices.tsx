@@ -49,7 +49,7 @@ export async function prefillVersion(acc: PortalLogin, shippingOrderId: string):
     billTo: { name: "", phone: "", address: "" },
     items: [
       {
-        description: `${air ? "Air" : "Sea"} freight China to Bangladesh – ${so.items.map((i) => `${i.productName} × ${i.quantity}`).join(", ")}`.slice(0, CUSTOM_LIMITS.text),
+        description: `${air ? "Air" : "Sea"} freight China to Bangladesh (per ${air ? "kg" : "CBM"}) – ${so.items.map((i) => `${i.productName} × ${i.quantity}`).join(", ")}`.slice(0, CUSTOM_LIMITS.text),
         qty: D(air ? so.billWeightKg : so.billCbm).toString(),
         unitPrice: str(air ? so.shipRatePerKgBdt : so.shipRatePerCbmBdt),
       },

@@ -167,7 +167,7 @@ export function PaymentBox({ accounts, reference }: { accounts: Account[]; refer
             <Text style={s.bold}>
               {a.providerName} {a.type ? <Text style={[s.muted, { fontFamily: "Helvetica" }]}>({TYPE[a.type]})</Text> : null}
             </Text>
-            <Text>Account name: {a.accountName}</Text>
+            {a.accountName ? <Text>Account name: {a.accountName}</Text> : null}
             <Text>Account no.: {a.accountNumber}</Text>
             {a.branch ? <Text>Branch: {a.branch}</Text> : null}
             {a.routingNumber ? <Text>Routing no.: {a.routingNumber}</Text> : null}
