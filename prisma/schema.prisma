@@ -1644,3 +1644,31 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
 }
+
+// ───────────────────────── Payment information (Settings) ─────────────────────────
+
+enum PaymentAccountType {
+  BANK
+  MOBILE_BANKING
+  OTHER
+}
+
+/// Accounts customers can pay into; those marked showOnPdf print on invoices, quotes and receipts.
+model PaymentAccount {
+  id            String             @id @default(cuid())
+  type          PaymentAccountType
+  /// Bank or provider, e.g. "Dutch-Bangla Bank", "bKash".
+  providerName  String
+  accountName   String
+  accountNumber String
+  branch        String?
+  routingNumber String?
+  notes         String?
+  showOnPdf     Boolean            @default(true)
+  /// Order on PDFs and in Settings (lowest first).
+  sortOrder     Int                @default(0)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([sortOrder])
+}
