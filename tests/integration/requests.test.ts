@@ -81,7 +81,7 @@ describe("product requests", () => {
     await makeRate(toYmd(today(BD_TZ)), "17", admin.id);
     const { order } = await createRequest(cs, base());
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).requestStatus).toBe("SENT_TO_CHINA");
-    expect(await prisma.notification.count({ where: { type: "NEW_REQUEST" } })).toBe(1);
+    expect(await prisma.notification.count({ where: { type: "BUY_REQUEST_NEW", user: { role: "PURCHASE" } } })).toBe(1);
     await expect(markCustomerApproved(cs, order.id)).rejects.toThrow(/quoted/);
 
     await quoteAndApprove(order.id, "10.50", "500");
@@ -93,7 +93,7 @@ describe("product requests", () => {
     await recordPayment(cs, order.id, { type: "ADVANCE", amountBdt: "300", method: "BKASH", reference: "TX1" });
     o = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { payments: true, lines: true } });
     expect(isReleasedForPurchase(o)).toBe(true);
-    expect(await prisma.notification.count({ where: { type: "READY_TO_PURCHASE" } })).toBe(1);
+    expect(await prisma.notification.count({ where: { type: "PURCHASE_RELEASED" } })).toBe(1);
     expect(await prisma.auditLog.count({ where: { entityType: "Order", field: "status" } })).toBeGreaterThanOrEqual(2);
   });
 
@@ -121,7 +121,7 @@ describe("product requests", () => {
     const p = await makeUser("PURCHASE");
     const { order } = await createRequest(cs, base());
     await addComment(p, order.id, "Price went up 10%");
-    const n = await prisma.notification.findMany({ where: { type: "COMMENT" } });
+    const n = await prisma.notification.findMany({ where: { type: "COMMENT_FROM_CHINA" } });
     expect(n.map((x) => x.userId)).toEqual([cs.id]);
   });
 });

@@ -7,7 +7,8 @@ import { allocate, D, money, rmbToBdt, sum } from "@/lib/money";
 import { CN_TZ, addDays, isoWeek, isoWeekStart, today } from "@/lib/dates";
 import { docNo } from "@/lib/format";
 import { logChanges, diffFields } from "@/lib/audit";
-import { notifyRoles, queueCustomerMessage } from "@/lib/notify";
+import { queueCustomerMessage } from "@/lib/notify";
+import { notify } from "./notify";
 import { rateForConversion } from "./rates";
 import { setLineStatus } from "./status";
 import type { Actor } from "./actor";
@@ -118,6 +119,7 @@ function isAcceptingOrOpen(s: { status: ShipmentStatus }) {
 export async function moveReceiving(actor: Actor, receivingId: string, shipmentId: string) {
   assertCan(actor.role, "shipment:edit");
   const s = await prisma.$transaction((tx) => assignToShipment(tx, actor.id, receivingId, shipmentId));
+  await notifyAssigned(receivingId, s, actor.id);
   return capacityWarning(s);
 }
 
@@ -280,8 +282,8 @@ export async function setShipmentStatus(actor: Actor, id: string, status: Shipme
     }
   });
 
+  await notifyShipmentStatus(s, status, lineIds, actor.id);
   if (status === "ARRIVED_BD") {
-    await notifyRoles(["ADMIN", "CS"], { type: "SHIPMENT_ARRIVED", title: `${s.code} arrived in Bangladesh`, body: `${s.itemCount} parcel(s) to receive.` });
     const orders = await prisma.order.findMany({ where: { lines: { some: { id: { in: lineIds } } } }, select: { id: true, number: true, customerId: true } });
     for (const o of orders) {
       await queueCustomerMessage(o.customerId, "WHATSAPP", {
@@ -298,6 +300,34 @@ export async function setShipmentStatus(actor: Actor, id: string, status: Shipme
       await queueCustomerMessage(o.customerId, "WHATSAPP", { type: "SHIPPED_FROM_CHINA", title: "Shipped from China", body: `Your order ${docNo("order", o.number)} has left China (${s.code}).`, orderId: o.id });
     }
   }
+}
+
+const CUSTOMER_EVENT: Partial<Record<ShipmentStatus, "SHIPMENT_DEPARTED" | "SHIPMENT_IN_TRANSIT" | "ARRIVED_BD" | "CUSTOMS_CLEARED">> = {
+  DEPARTED: "SHIPMENT_DEPARTED",
+  IN_TRANSIT: "SHIPMENT_IN_TRANSIT",
+  ARRIVED_BD: "ARRIVED_BD",
+  CUSTOMS_CLEARED: "CUSTOMS_CLEARED",
+};
+
+/** Admin hears when a shipment lands; every customer with goods in it hears each step. */
+async function notifyShipmentStatus(s: { id: string; code: string; itemCount: number }, status: ShipmentStatus, lineIds: string[], actorId: string) {
+  const cause = { userId: actorId };
+  const shipment = { id: s.id, code: s.code };
+  if (status === "ARRIVED_BD") await notify("SHIPMENT_ARRIVED", { shipment }, { parcels: s.itemCount }, cause);
+  const type = CUSTOMER_EVENT[status];
+  if (!type) return;
+  const [orders, shipping] = await Promise.all([
+    prisma.order.findMany({ where: { lines: { some: { id: { in: lineIds } } } }, select: { id: true, number: true, customerId: true } }),
+    prisma.shippingOrder.findMany({ where: { shipmentId: s.id, status: { notIn: ["CANCELLED", "DELIVERED"] } }, select: { id: true, number: true, customerId: true } }),
+  ]);
+  for (const o of orders) await notify(type, { order: o, shipment, customerId: o.customerId }, { shipment: s.code }, cause);
+  for (const o of shipping) await notify(type, { shipping: o, shipment, customerId: o.customerId }, { shipment: s.code }, cause);
+}
+
+/** Customers whose parcels moved to another shipment are told the new shipment code. */
+async function notifyAssigned(receivingId: string, shipment: { id: string; code: string }, actorId: string) {
+  const orders = await prisma.order.findMany({ where: { lines: { some: { receivingLines: { some: { receivingId } } } } }, select: { id: true, number: true, customerId: true } });
+  for (const o of orders) await notify("ASSIGNED_TO_SHIPMENT", { order: o, shipment, customerId: o.customerId }, { shipment: shipment.code }, { userId: actorId });
 }
 
 export type FreightInput = { chargeableWeightKg?: string; freightCost: string; freightCurrency: Currency };

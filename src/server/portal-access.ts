@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { UserError } from "@/lib/action";
 import { normalizeBdPhone, phoneVariants } from "@/lib/phone";
 import { logChanges } from "@/lib/audit";
-import { notifyRoles } from "@/lib/notify";
+import { notify } from "./notify";
 import { customerLedger } from "./ledger";
 
 /**
@@ -103,6 +103,6 @@ export async function agentAddCustomer(acc: PortalLogin, input: AgentCustomerInp
     await logChanges(tx, { entityType: "Customer", entityId: c.id, userId: null, action: "CREATE" });
     return c;
   });
-  await notifyRoles(["CS", "ADMIN"], { type: "AGENT_CUSTOMER_ADDED", title: `Agent added a customer: ${c.name}`, body: `${c.code} · ${c.phone} – added by agent ${acc.name}.` });
+  await notify("AGENT_CUSTOMER_ADDED", { ref: c.code, staffLink: `/customers/${c.id}` }, { name: c.name, phone: c.phone, agent: acc.name }, { accountId: acc.id });
   return c;
 }

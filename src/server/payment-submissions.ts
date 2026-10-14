@@ -6,7 +6,7 @@ import { UserError } from "@/lib/action";
 import { D, sum, type Decimal } from "@/lib/money";
 import { docNo } from "@/lib/format";
 import { logChanges } from "@/lib/audit";
-import { notifyRoles } from "@/lib/notify";
+import { notify } from "./notify";
 import { recordPayment } from "./requests";
 import { recordSamplePayment, sampleAmounts } from "./samples";
 import { recordShippingPayment } from "./shipping-orders";
@@ -77,12 +77,12 @@ export async function submitPayment(account: { accountId: string; customerId: st
     data: { customerId: account.customerId, accountId: account.accountId, ...targetWhere(t), amountBdt: amount, method: input.method, reference, paidAt: input.paidAt, note: input.note?.trim() || null },
   });
   await logChanges(prisma, { entityType: "PaymentSubmission", entityId: s.id, userId: null, action: "CREATE" });
-  await notifyRoles(["CS", "ADMIN"], {
-    type: "PAYMENT_SUBMITTED",
-    title: `Payment to verify: ${due.label} ৳${amount.toFixed(2)}`,
-    body: `${input.method.replace(/_/g, " ").toLowerCase()} · ${reference} – check it and approve in Payments to verify.`,
-    orderId: t.kind === "order" ? t.id : undefined,
-  });
+  await notify(
+    "PAYMENT_SUBMITTED",
+    { ref: submissionNo(s), staffLink: `/payments-to-verify?id=${s.id}` },
+    { amount: amount.toFixed(2), method: input.method.replace(/_/g, " ").toLowerCase(), reference, target: due.label },
+    { accountId: account.accountId },
+  );
   return s;
 }
 

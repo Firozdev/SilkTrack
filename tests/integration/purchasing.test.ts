@@ -51,7 +51,7 @@ describe("China purchasing", () => {
 
     // BD confirms by recording the advance → China notified, buying allowed
     await recordPayment(cs, o.id, { type: "ADVANCE", amountBdt: "500", method: "BKASH" });
-    expect(await prisma.notification.count({ where: { type: "READY_TO_PURCHASE", userId: china.id } })).toBe(1);
+    expect(await prisma.notification.count({ where: { type: "PURCHASE_RELEASED", userId: china.id } })).toBe(1);
     expect((await chinaInbox()).awaitingAdvance).toHaveLength(0);
     q = await purchaseQueue();
     expect(q.every((l) => l.advancePaid)).toBe(true);

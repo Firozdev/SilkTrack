@@ -1,3 +1,5 @@
+import { recordHistory } from "@/server/notifications";
+import { NotificationHistory } from "@/components/notification-history";
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { A, Alert, Attachments, Card, Dl, Table, inputCls, tdCls } from "@/components/ui";
@@ -24,6 +26,7 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
   const cid = await ownerOf(acc, "order", id);
   const o = cid ? await portalOrder(cid, id) : null;
   if (!cid || !o) notFound();
+  const history = await recordHistory({ orderId: o.id }, "customer");
   const due = await amountDue(cid, { kind: "order", id: o.id });
   const q = o.quote;
   const awaiting = q?.status === "SENT_TO_CUSTOMER";
@@ -195,6 +198,7 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
           ))}
         </Card>
       )}
+      <NotificationHistory title={t.updatesTitle} empty={t.noUpdates} items={history} fmt={(d) => fmtDateTime(d, BD_TZ)} />
     </div>
   );
 }

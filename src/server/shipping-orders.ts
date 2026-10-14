@@ -6,7 +6,8 @@ import { UserError } from "@/lib/action";
 import { D, cbmOf, money, sum } from "@/lib/money";
 import { docNo } from "@/lib/format";
 import { diffFields, logChanges } from "@/lib/audit";
-import { notifyRoles, queueCustomerMessage } from "@/lib/notify";
+import { queueCustomerMessage } from "@/lib/notify";
+import { notify, type About } from "./notify";
 import { portalShippingEditable } from "@/lib/editability";
 import { rateForConversion } from "./rates";
 import { liveRate, rateCardFor } from "./shipping-rates";
@@ -64,13 +65,10 @@ export type PortalShippingOrderInput = Omit<ShippingOrderInput, "customer">;
 
 /** The customer submits a shipping order in the portal. */
 export async function createPortalShippingOrder(customerId: string, input: PortalShippingOrderInput, placedBy?: PlacedBy) {
-  const s = await insertShippingOrder({ ...input, customer: { id: customerId, name: "", phone: "", address: "" } }, { source: "PORTAL", customerId, accountId: placedBy?.accountId });
-  const body = placedBy?.agentName ? `Submitted in the portal by agent ${placedBy.agentName}.` : "Submitted by the customer in the portal.";
-  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_SHIPPING_ORDER", title: `Portal shipping order: ${shippingNo(s)}`, body });
-  return s;
+  return insertShippingOrder({ ...input, customer: { id: customerId, name: "", phone: "", address: "" } }, { source: "PORTAL", customerId, accountId: placedBy?.accountId, agentName: placedBy?.agentName });
 }
 
-async function insertShippingOrder(input: ShippingOrderInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string; accountId?: string }) {
+async function insertShippingOrder(input: ShippingOrderInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string; accountId?: string; agentName?: string }) {
   const actorId = by.source === "STAFF" ? by.actorId : null;
   const items = input.items.filter((i) => i.productName.trim() && i.quantity > 0);
   if (!items.length) throw new UserError("Add at least one product with a quantity");
@@ -105,11 +103,9 @@ async function insertShippingOrder(input: ShippingOrderInput, by: { actorId: str
     await logChanges(tx, { entityType: "ShippingOrder", entityId: s.id, userId: actorId, action: "CREATE" });
     return s;
   });
-  await notifyRoles(["PURCHASE"], {
-    type: "SHIPPING_ORDER_NEW",
-    title: `Shipping order: ${shippingNo(s)}`,
-    body: `${items.length} parcel(s) expected at the China warehouse${input.qaRequested ? " – QA test requested" : ""}.`,
-  });
+  const cause = by.source === "STAFF" ? { userId: by.actorId } : { accountId: by.accountId };
+  await notify("SHIP_REQUEST_NEW", { shipping: s, customerId: s.customerId }, { items: items.length, qa: input.qaRequested, agent: by.source === "PORTAL" ? by.agentName : undefined }, cause);
+  if (input.qaRequested) await notify("QA_REQUESTED", { shipping: s }, {}, cause);
   return s;
 }
 
@@ -191,14 +187,11 @@ export async function receiveShippingChina(actor: Actor, id: string, input: Ship
     const msg = `${first ? "Received at China warehouse" : "Warehouse figures corrected"}: ${cartons.length} carton(s), ${grossWeightKg.toString()} kg, ${cbm.toString()} m³${problems.length ? ` – ${problems.length} item(s) with a problem` : ""}`;
     await move(tx, s, first ? "RECEIVED_CHINA" : s.status, actor.id, msg, data);
   });
-  if (first || problems.length) {
-    await notifyRoles(["CS", "ADMIN"], {
-      type: problems.length ? "SHIPPING_ORDER_ISSUE" : "SHIPPING_ORDER_RECEIVED",
-      title: `${problems.length ? "Problem receiving" : "Received in China"}: ${shippingNo(s)}`,
-      body: problems.length
-        ? problems.map((p) => `${byId.get(p.itemId)!.productName}: ${p.quantityReceived}/${byId.get(p.itemId)!.quantity} ${p.condition.toLowerCase().replace(/_/g, " ")}`).join("; ")
-        : `${grossWeightKg.toString()} kg · ${cbm.toString()} m³${s.qaRequested ? " – QA test next" : ""}`,
-    });
+  const about = { shipping: s, customerId: s.customerId };
+  if (first) await notify("RECEIVED_CHINA", about, { detail: `${grossWeightKg.toString()} kg · ${cbm.toString()} m³${s.qaRequested ? " – QA test next" : ""}` }, { userId: actor.id });
+  if (problems.length) {
+    const problem = problems.map((p) => `${byId.get(p.itemId)!.productName}: ${p.quantityReceived}/${byId.get(p.itemId)!.quantity} ${p.condition.toLowerCase().replace(/_/g, " ")}`).join("; ");
+    await notify("ISSUE_REPORTED", about, { problem, where: "China warehouse" }, { userId: actor.id });
   }
 }
 
@@ -212,11 +205,7 @@ export async function recordQa(actor: Actor, id: string, input: { result: QaResu
     await logChanges(tx, { entityType: "ShippingOrder", entityId: id, userId: actor.id, action: "UPDATE", changes: s.qaResult && s.qaResult !== input.result ? [{ field: "qaResult", oldValue: s.qaResult, newValue: input.result }] : [] });
     await move(tx, s, "QA_DONE", actor.id, `QA test ${input.result === "PASSED" ? "passed" : "FAILED"}${input.notes ? `: ${input.notes}` : ""}`, { qaResult: input.result, qaNotes: input.notes ?? null, qaById: actor.id, qaAt: new Date() });
   });
-  await notifyRoles(["CS", "ADMIN"], {
-    type: input.result === "PASSED" ? "SHIPPING_QA_PASSED" : "SHIPPING_QA_FAILED",
-    title: `QA ${input.result === "PASSED" ? "passed" : "failed"}: ${shippingNo(s)}`,
-    body: input.result === "PASSED" ? (input.notes ?? "Ready to ship.") : `${input.notes ?? "See the QA photos."} Tell the China team to ship anyway, or put the order on hold.`,
-  });
+  await notify(input.result === "PASSED" ? "QA_PASSED" : "QA_FAILED", { shipping: s, customerId: s.customerId }, { notes: input.notes }, { userId: actor.id });
 }
 
 /**
@@ -242,6 +231,7 @@ export async function assignShippingOrder(actor: Actor, id: string, shipmentId: 
     if (s.shipmentId) await recalcTotals(tx, s.shipmentId);
     return tx.shipment.findUniqueOrThrow({ where: { id: target.id } });
   });
+  if (sh.id !== s.shipmentId) await notify("ASSIGNED_TO_SHIPMENT", { shipping: s, shipment: sh, customerId: s.customerId }, { shipment: sh.code }, { userId: actor.id });
   return { shipment: sh, warning: capacityWarning(sh) };
 }
 
@@ -253,6 +243,7 @@ export async function receiveShippingBd(actor: Actor, id: string) {
   requireStatus(s, ["IN_SHIPMENT"], "The order is not in a shipment yet");
   await prisma.$transaction((tx) => move(tx, s, "RECEIVED_BD", actor.id, `Received in Bangladesh${s.shipment ? ` (${s.shipment.code})` : ""}`, { receivedBdAt: new Date() }));
   await queueCustomerMessage(s.customerId, "WHATSAPP", { type: "SHIPPING_ARRIVED", title: "Arrived in Bangladesh", body: `Your shipment ${shippingNo(s)} has arrived in Bangladesh. We will send the bill shortly.` });
+  await notify("ARRIVED_BD", { shipping: s, customerId: s.customerId }, {}, { userId: actor.id });
 }
 
 /**
@@ -347,6 +338,9 @@ export async function invoiceShipping(actor: Actor, id: string, input: ShippingI
       invoicedAt: new Date(),
     });
   });
+  const about = { shipping: s, customerId: s.customerId };
+  await notify("INVOICE_READY", about, { total: invoiceTotalBdt.toFixed(2) }, { userId: actor.id });
+  if (to === "READY_FOR_DELIVERY" && s.status !== "READY_FOR_DELIVERY") await notify("READY_FOR_DELIVERY", about, {}, { userId: actor.id });
 }
 
 export async function recordShippingPayment(actor: Actor, id: string, input: { amountBdt: string; method: PaymentMethod; reference?: string }) {
@@ -358,7 +352,7 @@ export async function recordShippingPayment(actor: Actor, id: string, input: { a
   const { balance } = await shippingBalance(s);
   if (amount.gt(balance)) throw new UserError(`That is more than the balance due (৳${balance.toFixed(2)})`);
   const settled = amount.eq(balance);
-  return prisma.$transaction(async (tx) => {
+  const payment = await prisma.$transaction(async (tx) => {
     const p = await tx.payment.create({
       data: { shippingOrderId: id, type: "SHIPPING_SERVICE", amountBdt: amount, method: input.method, reference: input.reference, receivedById: actor.id, paidAt: new Date() },
     });
@@ -368,6 +362,10 @@ export async function recordShippingPayment(actor: Actor, id: string, input: { a
     else await tx.shippingOrderEvent.create({ data: { shippingOrderId: id, message: msg, createdById: actor.id } });
     return p;
   });
+  const about = { shipping: s, customerId: s.customerId };
+  await notify("PAYMENT_CONFIRMED", about, { amount: amount.toFixed(2), method: input.method.replace(/_/g, " ").toLowerCase(), kind: "shipping" }, { userId: actor.id });
+  if (settled) await notify("READY_FOR_DELIVERY", about, {}, { userId: actor.id });
+  return payment;
 }
 
 export async function dispatchShipping(actor: Actor, id: string, input: { courier: DeliveryCourier; trackingNo?: string }) {
@@ -379,6 +377,7 @@ export async function dispatchShipping(actor: Actor, id: string, input: { courie
     move(tx, s, "OUT_FOR_DELIVERY", actor.id, `Out for delivery: ${how}`, { deliveryCourier: input.courier, deliveryTrackingNo: input.trackingNo ?? null, dispatchedAt: new Date() }),
   );
   await queueCustomerMessage(s.customerId, "WHATSAPP", { type: "OUT_FOR_DELIVERY", title: "Out for delivery", body: `Your shipment ${shippingNo(s)} is out for delivery (${how}).` });
+  await notify("OUT_FOR_DELIVERY", { shipping: s, customerId: s.customerId }, { how }, { userId: actor.id });
 }
 
 export async function deliverShipping(actor: Actor, id: string, receiverName?: string) {
@@ -386,6 +385,7 @@ export async function deliverShipping(actor: Actor, id: string, receiverName?: s
   const s = await load(id);
   requireStatus(s, ["OUT_FOR_DELIVERY"], "Dispatch the order first");
   await prisma.$transaction((tx) => move(tx, s, "DELIVERED", actor.id, `Delivered${receiverName ? ` – received by ${receiverName}` : ""}`, { deliveredAt: new Date(), receiverName: receiverName ?? null }));
+  await notify("DELIVERED", { shipping: s, customerId: s.customerId }, {}, { userId: actor.id });
 }
 
 /**
@@ -405,7 +405,7 @@ export async function confirmShippingReceipt(customerId: string, id: string, inp
       await tx.shippingOrderEvent.create({ data: { shippingOrderId: id, message: s.customerConfirmedAt ? `Customer added a note${input.problem ? " – PROBLEM reported" : ""}: ${input.note ?? ""}` : msg } });
     }
   });
-  await notifyReceipt(shippingNo(s), input, undefined);
+  await notifyReceipt({ shipping: s }, input);
 }
 
 /** Fields to save for a receipt confirmation; later notes are appended with the date. */
@@ -418,13 +418,8 @@ export function receiptData(prev: { customerConfirmedAt: Date | null; customerNo
   };
 }
 
-export async function notifyReceipt(ref: string, input: { note?: string; problem: boolean }, orderId: string | undefined) {
-  await notifyRoles(input.problem ? ["CS", "ADMIN"] : ["CS"], {
-    type: input.problem ? "CUSTOMER_PROBLEM_REPORTED" : "CUSTOMER_CONFIRMED_RECEIPT",
-    title: `${input.problem ? "⚠ Problem reported" : "Received by customer"}: ${ref}`,
-    body: input.note || (input.problem ? "The customer reported a problem – contact them." : "The customer confirmed they received the goods."),
-    orderId,
-  });
+export async function notifyReceipt(about: About, input: { note?: string; problem: boolean }) {
+  await notify(input.problem ? "CUSTOMER_PROBLEM_REPORTED" : "CUSTOMER_CONFIRMED_RECEIPT", about, { note: input.note });
 }
 
 // ───────────────────────── Customer edits in the portal ─────────────────────────
@@ -468,14 +463,14 @@ export async function updatePortalShippingOrder(customerId: string, id: string, 
     await logChanges(tx, { entityType: "ShippingOrder", entityId: id, userId: null, action: "UPDATE", changes: [{ field: "customerEdit", oldValue: null, newValue: `${items.length} item(s)` }] });
     return ids;
   });
-  await notifyRoles(["CS", "ADMIN", "PURCHASE"], { type: "PORTAL_SHIPPING_EDITED", title: `Customer changed ${shippingNo(s)}`, body: "Products / tracking were updated." });
+  await notify("PORTAL_SHIPPING_EDITED", { shipping: s });
   return ids;
 }
 
 export async function cancelPortalShippingOrder(customerId: string, id: string, reason?: string) {
   const s = await loadForPortalEdit(customerId, id);
   await prisma.$transaction((tx) => move(tx, s, "CANCELLED", null, `Cancelled by the customer in the portal${reason ? `: ${reason}` : ""}`));
-  await notifyRoles(["CS", "ADMIN", "PURCHASE"], { type: "PORTAL_SHIPPING_CANCELLED", title: `Customer cancelled ${shippingNo(s)}`, body: reason ?? "No reason given." });
+  await notify("PORTAL_SHIPPING_CANCELLED", { shipping: s }, { reason });
 }
 
 // ───────────────────────── Hold / cancel ─────────────────────────

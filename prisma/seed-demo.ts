@@ -2,11 +2,20 @@
 // Usage: npm run db:seed:demo   (each run adds another set)
 import { prisma } from "../scripts/db";
 import { hashPassword } from "../src/lib/password";
+import { RULES, type EventType } from "../src/lib/notifications/rules";
+import { render, type Data } from "../src/lib/notifications/templates";
+import type { Role } from "../src/generated/prisma/enums";
 
 const PORTAL_PHONE = "01700000099";
 const PORTAL_PASSWORD = "demo-pass-123";
 const AGENT_PHONE = "01900000099";
 const AGENT_PASSWORD = "agent-pass-123";
+const STAFF_PASSWORD = "staff-pass-123";
+
+/** Demo CS and China logins (only created if the email is free). */
+async function staffUser(email: string, name: string, role: Role, timezone: string) {
+  return prisma.user.upsert({ where: { email }, update: {}, create: { email, name, role, timezone, passwordHash: await hashPassword(STAFF_PASSWORD) } });
+}
 
 async function customer(code: string, name: string, phone: string) {
   return prisma.customer.upsert({ where: { code }, update: {}, create: { code, name, phone, address: "House 1, Road 2, Mirpur, Dhaka", district: "Dhaka" } });
@@ -52,11 +61,54 @@ async function main() {
     await prisma.order.create({ data: { customerId: c.id, source: "PORTAL", placedByAccountId: agent.id, requestStatus: "SENT_TO_CHINA", shippingMethod: "AIR", lines: { create: [line(`Phone case for ${name} (demo)`, 5)] } } });
   }
 
-  await prisma.issue.create({ data: { type: "DAMAGED", source: "CHINA_RECEIVING", orderId: buyStaff.id, description: "Demo: carton arrived crushed, one chair leg broken", reportedById: admin.id } });
+  const issue = await prisma.issue.create({ data: { type: "DAMAGED", source: "CHINA_RECEIVING", orderId: buyStaff.id, description: "Demo: carton arrived crushed, one chair leg broken", reportedById: admin.id } });
+
+  // Demo staff for the CS and China roles, then a few unread notifications for every role,
+  // built from the same rules and templates the app uses.
+  await staffUser("cs.demo@silktrack.test", "Demo CS", "CS", "Asia/Dhaka");
+  await staffUser("china.demo@silktrack.test", "Demo China", "PURCHASE", "Asia/Shanghai");
+  const staff = await prisma.user.findMany({ where: { active: true }, select: { id: true, role: true } });
+  const accounts = await prisma.portalAccount.findMany({ where: { status: "ACTIVE" }, select: { id: true, kind: true, customerId: true } });
+  const agentCustomerIds = new Set((await prisma.customer.findMany({ where: { agentAccountId: agent.id }, select: { id: true } })).map((c) => c.id));
+  const no = (p: string, n: number) => `${p}-${String(n).padStart(6, "0")}`;
+  const note = async (type: EventType, d: Data, about: { orderId?: string; shippingOrderId?: string; customerId?: string }, staffLink: string, portalLink: string) => {
+    const rule = RULES[type];
+    const event = await prisma.notificationEvent.create({ data: { type, data: d, orderId: about.orderId, shippingOrderId: about.shippingOrderId, customerId: about.customerId } });
+    const rows = [
+      ...staff.filter((u) => (rule.roles as Role[]).includes(u.role)).map((u) => ({ ...render(type, d, "staff"), userId: u.id, link: staffLink })),
+      ...(rule.customer && about.customerId
+        ? accounts
+            .filter((a) => (a.kind === "CUSTOMER" && a.customerId === about.customerId) || (a.kind === "AGENT" && a.id === agent.id && agentCustomerIds.has(about.customerId!)))
+            .map((a) => ({ ...render(type, d, "customer", a.kind === "AGENT"), portalAccountId: a.id, link: portalLink }))
+        : []),
+    ];
+    await prisma.notification.createMany({ data: rows.map((r) => ({ ...r, channel: "IN_APP" as const, type, eventId: event.id, status: "SENT" as const, orderId: about.orderId })) });
+  };
+  const ord = (o: { id: string; number: number; customerId: string }) => ({ about: { orderId: o.id, customerId: o.customerId }, staff: `/requests/${o.id}`, portal: `/portal/requests/${o.id}`, ref: no("REQ", o.number) });
+  const shp = (o: { id: string; number: number; customerId: string }) => ({ about: { shippingOrderId: o.id, customerId: o.customerId }, staff: `/shipping-orders/${o.id}`, portal: `/portal/shipping/${o.id}`, ref: no("SHO", o.number) });
+  const a = ord(buyPortal);
+  const b = shp(shipPortal);
+  const c = ord(buyStaff);
+  await note("BUY_REQUEST_NEW", { ref: a.ref, customer: portalCustomer.name, items: 1, method: "air" }, a.about, a.staff, a.portal);
+  await note("QUOTE_SENT", { ref: a.ref, validUntil: "2099-01-01" }, a.about, a.staff, a.portal);
+  await note("QA_FAILED", { ref: b.ref, notes: "Demo: one sneaker has a scuff mark", customer: portalCustomer.name }, b.about, b.staff, b.portal);
+  await note("SHIPMENT_DEPARTED", { ref: b.ref, shipment: "SHP-DEMO-A" }, b.about, b.staff, b.portal);
+  await note("PAYMENT_SUBMITTED", { ref: "PS-DEMO", amount: "800.00", method: "nagad", reference: `${ref}N`, target: b.ref }, {}, "/payments-to-verify", "/portal");
+  await note("ISSUE_REPORTED", { ref: c.ref, problem: "Demo: carton arrived crushed", where: "China warehouse" }, c.about, `/issues?id=${issue.id}`, c.portal);
+  await note("PRICE_APPROVAL_RESULT", { ref: c.ref, approved: true, purchase: "PUR-DEMO" }, c.about, c.staff, c.portal);
+  await note("QUOTE_SUBMITTED", { ref: c.ref, estimate: "EST-DEMO v1", totalRmb: "420.00" }, c.about, c.staff, c.portal);
+  const agentOrder = await prisma.order.findFirst({ where: { placedByAccountId: agent.id }, orderBy: { requestedAt: "desc" }, select: { id: true, number: true, customerId: true } });
+  if (agentOrder) {
+    const g = ord(agentOrder);
+    await note("PURCHASED", { ref: g.ref, purchase: "PUR-DEMO", customer: "Demo Agent Customer" }, g.about, g.staff, g.portal);
+  }
 
   console.log("Demo data added: 4 Buy for Me (2 by the agent), 2 Ship for Me, 2 payments to confirm, 1 open issue.");
   console.log(`Customer portal login: mobile ${PORTAL_PHONE} / password ${PORTAL_PASSWORD}`);
   console.log(`Agent portal login:    mobile ${AGENT_PHONE} / password ${AGENT_PASSWORD}`);
+  console.log(`CS login:    cs.demo@silktrack.test / ${STAFF_PASSWORD}`);
+  console.log(`China login: china.demo@silktrack.test / ${STAFF_PASSWORD}`);
+  console.log("Every role now has a few unread demo notifications.");
 }
 
 main()

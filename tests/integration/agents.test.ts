@@ -84,8 +84,8 @@ describe("Agents in the portal", () => {
     expect(order).toMatchObject({ customerId: mine.id, source: "PORTAL", placedByAccountId: a.id });
     const so = await createPortalShippingOrder(mine.id, { shippingMethod: "AIR", qaRequested: false, items: [{ productName: "Shoes", quantity: 1 }] }, placedBy(a));
     const { order: lonerOrder } = await request(loner.customer!.id, loner);
-    const notice = await prisma.notification.findFirstOrThrow({ where: { type: "PORTAL_REQUEST", orderId: order.id } });
-    expect(notice.body).toMatch(/from agent Rafiq/);
+    const notice = await prisma.notification.findFirstOrThrow({ where: { type: "BUY_REQUEST_NEW", orderId: order.id, userId: { not: null } } });
+    expect(notice.body).toMatch(/placed by agent Rafiq/);
 
     // Reading: agent A yes, agent B and other customers no
     expect(await ownerOf(a, "order", order.id)).toBe(mine.id);

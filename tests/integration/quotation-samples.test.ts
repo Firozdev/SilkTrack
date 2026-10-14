@@ -80,7 +80,7 @@ describe("China quotation", () => {
     const e = await saveQuotation(china, order.id, quote(order));
     await expect(sendQuotationToCustomer(cs, e.id)).rejects.toThrow(/submitted/);
     await submitQuotation(china, e.id);
-    expect(await prisma.notification.count({ where: { type: "ESTIMATE_READY", userId: cs.id } })).toBe(1);
+    expect(await prisma.notification.count({ where: { type: "QUOTE_SUBMITTED", userId: cs.id } })).toBe(1);
     await expect(sendQuotationToCustomer(cs, e.id)).rejects.toThrow(/selling price/);
     const lines = await prisma.estimateLine.findMany({ where: { estimateId: e.id } });
     await setSellingPrices(cs, e.id, lines.map((l) => ({ lineId: l.id, sellingPriceBdt: "7000" })));

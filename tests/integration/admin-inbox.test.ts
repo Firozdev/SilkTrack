@@ -43,7 +43,7 @@ describe("Admin dashboard: New Requests", () => {
     const { order: staff } = await createRequest(cs, { customer: { name: "Rahim", phone: "01811000000", address: "x" }, shippingMethod: "AIR", lines: [{ productName: "Bag", quantity: 1, links: [] }] });
     expect(portal.requestStatus).toBe("SENT_TO_CHINA");
     expect(staff.requestStatus).toBe("SENT_TO_CHINA");
-    expect(await prisma.notification.count({ where: { type: "NEW_REQUEST", userId: china.id } })).toBe(2);
+    expect(await prisma.notification.count({ where: { type: "BUY_REQUEST_NEW", userId: china.id } })).toBe(2);
     await expect(sendToChina(cs, staff.id)).rejects.toThrow(/Only new requests/);
 
     let p = await panel("buy");

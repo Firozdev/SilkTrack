@@ -7,7 +7,7 @@ import { UserError } from "@/lib/action";
 import { MIN_PASSWORD_LENGTH, hashPassword, verifyPassword } from "@/lib/password";
 import { normalizeBdPhone, phoneVariants } from "@/lib/phone";
 import { logChanges } from "@/lib/audit";
-import { notifyRoles } from "@/lib/notify";
+import { notify } from "./notify";
 import { findOrCreateCustomer } from "./requests";
 import type { Actor } from "./actor";
 
@@ -81,11 +81,7 @@ export async function signUp(input: SignUpInput) {
     // A rejected phone may sign up again (e.g. after correcting details).
     return existing ? tx.portalAccount.update({ where: { id: existing.id }, data }) : tx.portalAccount.create({ data });
   });
-  await notifyRoles(["CS", "ADMIN"], {
-    type: "PORTAL_SIGNUP",
-    title: `Portal sign-up: ${acc.name}`,
-    body: matches.length ? `${acc.phone} – same phone as ${matches.map((m) => m.code).join(", ")}. Check and approve in Customers.` : `${acc.phone} – approve in Customers.`,
-  });
+  await notify("PORTAL_SIGNUP", { staffLink: "/customers?portal=PENDING" }, { name: acc.name, phone: acc.phone, matches: matches.map((m) => m.code).join(", ") || undefined });
   return acc;
 }
 
@@ -140,9 +136,9 @@ export async function accountForSession(token: string | undefined, now = new Dat
   if (!s || s.expiresAt <= now) return null;
   const a = s.account;
   if (a.status !== "ACTIVE") return null;
-  if (a.kind === "AGENT") return { id: a.id, name: a.name, phone: a.phone, kind: "AGENT" as const, customer: null };
+  if (a.kind === "AGENT") return { id: a.id, name: a.name, phone: a.phone, notifySound: a.notifySound, kind: "AGENT" as const, customer: null };
   if (!a.customer) return null;
-  return { id: a.id, name: a.name, phone: a.phone, kind: "CUSTOMER" as const, customer: a.customer };
+  return { id: a.id, name: a.name, phone: a.phone, notifySound: a.notifySound, kind: "CUSTOMER" as const, customer: a.customer };
 }
 
 export async function endSession(token: string | undefined) {

@@ -1,17 +1,10 @@
 import "server-only";
-import type { NotificationChannel, Role } from "@/generated/prisma/client";
+import type { NotificationChannel } from "@/generated/prisma/client";
 import { prisma } from "./prisma";
 
 type Msg = { type: string; title: string; body: string; orderId?: string | null };
 
-/** In-app notification to every active user with one of `roles`. */
-export async function notifyRoles(roles: Role[], msg: Msg, exceptUserId?: string) {
-  const users = await prisma.user.findMany({ where: { role: { in: roles }, active: true }, select: { id: true } });
-  const data = users
-    .filter((u) => u.id !== exceptUserId)
-    .map((u) => ({ ...msg, channel: "IN_APP" as const, userId: u.id }));
-  if (data.length) await prisma.notification.createMany({ data });
-}
+/** In-app notifications: see src/server/notify.ts. */
 
 /**
  * Queue a customer message. No SMS/WhatsApp gateway yet (phase 2): the row

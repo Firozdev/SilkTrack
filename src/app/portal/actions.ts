@@ -19,6 +19,7 @@ import { cancelPortalRequest, createPortalRequest, updatePortalRequest } from "@
 import { cancelPortalShippingOrder, createPortalShippingOrder, updatePortalShippingOrder, updatePortalShippingTracking } from "@/server/shipping-orders";
 import { UserError } from "@/lib/action";
 import { agentAddCustomer, customerForNew, placedBy, requireOwner } from "@/server/portal-access";
+import { markAllRead, markRead, setSound } from "@/server/notifications";
 import { DICTS, fill, translateError, type Dict, type Lang } from "./i18n";
 import { getLang, setLangCookie } from "./lang";
 
@@ -271,3 +272,21 @@ export const portalAddCustomerAction = portalAction(async (fd, t) => {
   revalidatePath("/portal");
   return { ok: true, message: fill(t.customerAdded, { name: c.name, code: c.code }) };
 });
+
+// ───────── Notifications (bell) – each acts only on the signed-in login's own ─────────
+
+export async function portalMarkReadAction(id: string) {
+  const acc = await requirePortalAccount();
+  await markRead({ accountId: acc.id }, String(id));
+}
+
+export async function portalMarkAllReadAction() {
+  const acc = await requirePortalAccount();
+  await markAllRead({ accountId: acc.id });
+  revalidatePath("/portal/notifications");
+}
+
+export async function portalSetSoundAction(on: boolean) {
+  const acc = await requirePortalAccount();
+  await setSound({ accountId: acc.id }, on === true);
+}

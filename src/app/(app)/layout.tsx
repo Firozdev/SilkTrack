@@ -3,20 +3,30 @@ import type { ReactNode } from "react";
 import { Nav } from "@/components/nav";
 import { requireUser } from "@/lib/session";
 import { navFor } from "@/lib/navigation";
-import { prisma } from "@/lib/prisma";
+import { NotificationBell, type BellLabels } from "@/components/notification-bell";
 import { getCurrentRate } from "@/server/rates";
 import { fmtRate } from "@/lib/format";
 import { fmtDay } from "@/lib/dates";
 import { logout } from "./actions";
+import { markAllReadAction, markReadAction, setSoundAction } from "./notifications/actions";
 
 const ROLE_LABEL = { ADMIN: "Admin", CS: "CS · Bangladesh", PURCHASE: "Purchase · China" } as const;
 
+const BELL: BellLabels = {
+  notifications: "Notifications",
+  markAllRead: "Mark all as read",
+  viewAll: "View all",
+  empty: "No notifications yet.",
+  sound: "Sound",
+  justNow: "just now",
+  minAgo: "{n} min ago",
+  hAgo: "{n} h ago",
+  dAgo: "{n} d ago",
+};
+
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
-  const [{ rate, isToday }, unread] = await Promise.all([
-    getCurrentRate(),
-    prisma.notification.count({ where: { userId: user.id, channel: "IN_APP", readAt: null } }),
-  ]);
+  const { rate, isToday } = await getCurrentRate();
 
   return (
     // App shell fills the viewport: header, banner and menu stay put; only <main> scrolls.
@@ -30,10 +40,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <span className="hidden text-gray-500 sm:inline">
             1 RMB = <b className="text-gray-800">{rate ? fmtRate(rate.rate) : "—"}</b> BDT
           </span>
-          <Link href="/notifications" className="relative rounded-md px-2 py-1 text-gray-700 hover:bg-gray-100" aria-label={`${unread} unread notifications`}>
-            🔔
-            {unread > 0 && <span className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{unread}</span>}
-          </Link>
+          <NotificationBell feedUrl="/api/notifications" viewAllHref="/notifications" soundOn={user.notifySound} labels={BELL} markRead={markReadAction} markAllRead={markAllReadAction} setSound={setSoundAction} />
           <span className="hidden text-gray-700 sm:inline">
             {user.name} <span className="text-gray-400">({ROLE_LABEL[user.role]})</span>
           </span>
