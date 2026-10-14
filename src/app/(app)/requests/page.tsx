@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { awaitingQuoteWhere, chinaInbox } from "@/server/requests";
 
-const REQUEST_STATUSES = ["NEW", "SENT_TO_CHINA", "SAMPLING", "QUOTED", "CUSTOMER_APPROVED", "REJECTED", "CANCELLED"] as const;
+const REQUEST_STATUSES = ["NEW", "SAMPLING", "QUOTED", "CUSTOMER_APPROVED", "REJECTED", "CANCELLED"] as const;
 /** Not a status: requests still waiting for China's quotation (the dashboard's Buy for Me panel). */
 const AWAITING_QUOTE = "AWAITING_QUOTE";
 

@@ -79,7 +79,7 @@ export async function saveQuotation(actor: Actor, orderId: string, input: Quotat
   assertCan(actor.role, "estimate:edit");
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { lines: true, estimates: { orderBy: { version: "desc" }, take: 1, include: { lines: true } } } });
   if (!order) throw new UserError("Request not found");
-  if (order.requestStatus !== "SENT_TO_CHINA") throw new UserError("The request must be sent to China before it can be quoted");
+  if (order.requestStatus !== "NEW") throw new UserError("This request is not waiting for a quotation");
   const latest = order.estimates[0];
   if (latest && !EDITABLE_BY_CHINA.includes(latest.status)) throw new UserError(`Quotation v${latest.version} is ${latest.status.toLowerCase().replace(/_/g, " ")} – revise it to make changes`);
 
@@ -279,7 +279,7 @@ export async function decidePortalQuotation(customerId: string, id: string, deci
 /**
  * New version for changes or re-pricing: copies the quotation into a fresh
  * draft (v+1) for China; the old one becomes Revised. The request goes back
- * to "Sent to China".
+ * to New (with the China team).
  */
 export async function reviseQuotation(actor: Actor, id: string, reason?: string) {
   if (actor.role === "PURCHASE") assertCan(actor.role, "estimate:edit");
@@ -338,9 +338,9 @@ export async function reviseQuotation(actor: Actor, id: string, reason?: string)
         },
       },
     });
-    if (e.order.requestStatus !== "SENT_TO_CHINA") {
-      await tx.order.update({ where: { id: e.orderId }, data: { requestStatus: "SENT_TO_CHINA" } });
-      await logChanges(tx, { entityType: "Order", entityId: e.orderId, userId: actor.id, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: e.order.requestStatus, newValue: "SENT_TO_CHINA" }] });
+    if (e.order.requestStatus !== "NEW") {
+      await tx.order.update({ where: { id: e.orderId }, data: { requestStatus: "NEW" } });
+      await logChanges(tx, { entityType: "Order", entityId: e.orderId, userId: actor.id, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: e.order.requestStatus, newValue: "NEW" }] });
     }
     return n;
   });

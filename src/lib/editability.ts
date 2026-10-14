@@ -3,7 +3,7 @@
  * portal: before staff start working on it.
  */
 export function portalRequestEditable(o: { requestStatus: string; estimateCount: number }) {
-  return o.requestStatus === "NEW" || (o.requestStatus === "SENT_TO_CHINA" && o.estimateCount === 0);
+  return o.requestStatus === "NEW" && o.estimateCount === 0;
 }
 
 export function portalShippingEditable(s: { status: string }) {

@@ -10,7 +10,7 @@ export default async function NewQuotationPage({ searchParams }: PageProps<"/est
   const { order: orderId } = await searchParams;
   if (typeof orderId !== "string") redirect("/estimates");
   const d = await quotationFormData(orderId, user);
-  if (d.order.requestStatus !== "SENT_TO_CHINA") {
+  if (d.order.requestStatus !== "NEW") {
     return (
       <>
         <PageHeader title="China quotation" />

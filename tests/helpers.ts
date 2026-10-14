@@ -30,15 +30,13 @@ export const DONE = { trackingUrl: "https://trade.1688.com/order/123", expectedA
 
 /**
  * Take a request through the China quotation to customer approval:
- * send to China → China quotes and submits → BD sets selling prices → sent → approved.
+ * China quotes and submits → BD sets selling prices → sent → approved.
  */
 export async function quoteAndApprove(orderId: string, unitPriceRmb = "10", sellingPerLine = "1000", size: { cartonCount?: number; lengthCm?: string; widthCm?: string; heightCm?: string; unitWeightKg?: string } = {}) {
   const { saveQuotation, submitQuotation, setSellingPrices, sendQuotationToCustomer, approveQuotation } = await import("@/server/estimates");
-  const { sendToChina } = await import("@/server/requests");
   const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: { orderBy: { lineNo: "asc" } } } });
   const china = (await prisma.user.findFirst({ where: { role: "PURCHASE" } })) ?? (await makeUser("PURCHASE"));
   const bd = (await prisma.user.findFirst({ where: { role: "CS" } })) ?? (await makeUser("CS"));
-  if (order.requestStatus === "NEW") await sendToChina(bd, orderId);
   const e = await saveQuotation(china, orderId, {
     shippingMethod: order.shippingMethod,
     shippingRatePerKgRmb: "10",

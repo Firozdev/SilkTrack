@@ -182,7 +182,7 @@ describe("request status while sampling", () => {
 
   const status = async (id: string) => (await prisma.order.findUniqueOrThrow({ where: { id } })).requestStatus;
 
-  it("moves to Sampling and back to Sent to China when the last sample closes", async () => {
+  it("moves to Sampling and back to New (with China) when the last sample closes", async () => {
     const order = await sentRequest();
     const e = await saveQuotation(china, order.id, quote(order));
     await submitQuotation(china, e.id);
@@ -192,9 +192,9 @@ describe("request status while sampling", () => {
     await cancelSample(cs, a.id, "not needed");
     expect(await status(order.id)).toBe("SAMPLING"); // b still open
     await cancelSample(cs, b.id, "not needed");
-    expect(await status(order.id)).toBe("SENT_TO_CHINA");
+    expect(await status(order.id)).toBe("NEW");
     const log = await prisma.auditLog.findMany({ where: { entityId: order.id, field: "requestStatus" }, orderBy: { createdAt: "asc" } });
-    expect(log.map((l) => l.newValue)).toEqual(["SENT_TO_CHINA", "SAMPLING", "SENT_TO_CHINA"]);
+    expect(log.map((l) => l.newValue)).toEqual(["SAMPLING", "NEW"]);
   });
 
   it("returns to Quoted after delivery when the quotation was sent; approval works during sampling", async () => {

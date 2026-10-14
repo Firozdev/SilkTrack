@@ -13,7 +13,6 @@ import {
   cancelOrder,
   createRequest,
   recordPayment,
-  sendToChina,
   setHold,
   updateRequestHeader,
 } from "@/server/requests";
@@ -81,7 +80,6 @@ function simple(fn: (user: Awaited<ReturnType<typeof requireUser>>, orderId: str
   });
 }
 
-export const sendToChinaAction = simple((u, id) => sendToChina(u, id), "Sent to China team.");
 export const holdAction = simple((u, id) => setHold(u, id, true), "Order put on hold.");
 export const resumeAction = simple((u, id) => setHold(u, id, false), "Order resumed.");
 export const cancelAction = simple(

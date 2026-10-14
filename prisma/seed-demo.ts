@@ -34,8 +34,8 @@ async function main() {
   });
 
   const line = (productName: string, quantity: number) => ({ lineNo: 1, productName, quantity, trackingEvents: { create: { leg: "SUPPLIER_TO_CHINA" as const, status: "REQUESTED" as const, message: "Demo request" } } });
-  const buyPortal = await prisma.order.create({ data: { customerId: portalCustomer.id, source: "PORTAL", requestStatus: "SENT_TO_CHINA", shippingMethod: "AIR", lines: { create: [line("Desk lamp (demo)", 2)] } } });
-  const buyStaff = await prisma.order.create({ data: { customerId: staffCustomer.id, source: "STAFF", createdById: admin.id, requestStatus: "SENT_TO_CHINA", shippingMethod: "SEA", lines: { create: [line("Office chair (demo)", 4)] } } });
+  const buyPortal = await prisma.order.create({ data: { customerId: portalCustomer.id, source: "PORTAL", requestStatus: "NEW", shippingMethod: "AIR", lines: { create: [line("Desk lamp (demo)", 2)] } } });
+  const buyStaff = await prisma.order.create({ data: { customerId: staffCustomer.id, source: "STAFF", createdById: admin.id, requestStatus: "NEW", shippingMethod: "SEA", lines: { create: [line("Office chair (demo)", 4)] } } });
 
   const item = (productName: string, quantity: number) => ({ lineNo: 1, productName, quantity });
   const event = { create: { status: "REQUESTED" as const, message: "Demo shipping request" } };
@@ -58,7 +58,7 @@ async function main() {
   ]) {
     const c = await customer(code, name, phone);
     await prisma.customer.update({ where: { id: c.id }, data: { agentAccountId: agent.id } });
-    await prisma.order.create({ data: { customerId: c.id, source: "PORTAL", placedByAccountId: agent.id, requestStatus: "SENT_TO_CHINA", shippingMethod: "AIR", lines: { create: [line(`Phone case for ${name} (demo)`, 5)] } } });
+    await prisma.order.create({ data: { customerId: c.id, source: "PORTAL", placedByAccountId: agent.id, requestStatus: "NEW", shippingMethod: "AIR", lines: { create: [line(`Phone case for ${name} (demo)`, 5)] } } });
   }
 
   const issue = await prisma.issue.create({ data: { type: "DAMAGED", source: "CHINA_RECEIVING", orderId: buyStaff.id, description: "Demo: carton arrived crushed, one chair leg broken", reportedById: admin.id } });

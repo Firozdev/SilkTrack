@@ -118,8 +118,7 @@ export default async function Dashboard() {
         <section className="mb-6 space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Bangladesh</h2>
           <TileRow>
-            <StatTile label="New requests" value={bd.newRequests} hint="not sent to China" href="/requests?rs=NEW" />
-            <StatTile label="With China team" value={bd.sentToChina} hint="being quoted" href="/requests?rs=SENT_TO_CHINA" />
+            <StatTile label="With China team" value={bd.withChina} hint="new, being quoted" href="/requests?rs=NEW" />
             <StatTile label="Quotations to review" value={bd.quotationsToReview} hint="add selling price & send" href="/estimates?status=SUBMITTED_BY_CHINA" tone={bd.quotationsToReview ? "attention" : "default"} />
             <StatTile label="In sampling" value={bd.sampling} hint="sample in progress" href="/requests?rs=SAMPLING" />
             <StatTile label="Pending quotes" value={bd.quoted} hint="waiting for customer" href="/requests?rs=QUOTED" />

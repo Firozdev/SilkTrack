@@ -149,8 +149,8 @@ async function insertRequest(input: RequestInput, by: { actorId: string; source:
         source: by.source,
         createdById: actorId,
         placedByAccountId: by.source === "PORTAL" ? (by.accountId ?? null) : null,
-        // New requests go straight to the China team for a quotation (decision 2026-10-14).
-        requestStatus: "SENT_TO_CHINA",
+        // New = with the China team: requests go to their queue directly, no "send" step.
+        requestStatus: "NEW",
         type,
         typeOverridden: type !== suggested,
         shippingMethod: input.shippingMethod,
@@ -175,8 +175,6 @@ async function insertRequest(input: RequestInput, by: { actorId: string; source:
       include: { lines: { orderBy: { lineNo: "asc" } } },
     });
     await logChanges(tx, { entityType: "Order", entityId: order.id, userId: actorId, action: "CREATE" });
-    // Keep the hand-off to China visible in the status history.
-    await logChanges(tx, { entityType: "Order", entityId: order.id, userId: actorId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: "NEW", newValue: "SENT_TO_CHINA" }] });
     return order;
   });
   await notifyNewRequest(order, by.source === "STAFF" ? { userId: by.actorId } : { accountId: by.accountId }, by.source === "PORTAL" ? by.agentName : undefined);
@@ -197,18 +195,6 @@ async function loadOrder(orderId: string) {
 async function setRequestStatus(tx: Prisma.TransactionClient, orderId: string, from: string, to: Prisma.OrderUpdateInput["requestStatus"], actorId: string | null) {
   await tx.order.update({ where: { id: orderId }, data: { requestStatus: to } });
   await logChanges(tx, { entityType: "Order", entityId: orderId, userId: actorId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: from, newValue: to as string }] });
-}
-
-/**
- * CS hands the request to the China team (price check / estimate). New requests
- * are sent automatically; this is only for ones created before that, still New.
- */
-export async function sendToChina(actor: Actor, orderId: string) {
-  assertCan(actor.role, "request:edit");
-  const order = await loadOrder(orderId);
-  if (order.requestStatus !== "NEW") throw new UserError("Only new requests can be sent to China");
-  await prisma.$transaction((tx) => setRequestStatus(tx, orderId, order.requestStatus, "SENT_TO_CHINA", actor.id));
-  await notifyNewRequest(order, { userId: actor.id });
 }
 
 /** Customer accepted the quote. Purchase is released once an advance is recorded. */
@@ -249,7 +235,7 @@ export async function markRejected(actor: Actor, orderId: string) {
 
 export async function applyCustomerRejection(orderId: string, actorId: string | null, message: string) {
   const order = await loadOrder(orderId);
-  if (!["QUOTED", "SAMPLING", "SENT_TO_CHINA", "NEW"].includes(order.requestStatus)) throw new UserError("This request can't be rejected now");
+  if (!["QUOTED", "SAMPLING", "NEW"].includes(order.requestStatus)) throw new UserError("This request can't be rejected now");
   await prisma.$transaction(async (tx) => {
     await setRequestStatus(tx, orderId, order.requestStatus, "REJECTED", actorId);
     await setLineStatus(tx, order.lines.map((l) => l.id), "CANCELLED", { actorId, message });
@@ -337,7 +323,7 @@ export type HeaderInput = {
 export async function updateRequestHeader(actor: Actor, orderId: string, input: HeaderInput) {
   assertCan(actor.role, "request:edit");
   const order = await loadOrder(orderId);
-  if (!["NEW", "SENT_TO_CHINA", "SAMPLING", "QUOTED"].includes(order.requestStatus)) throw new UserError("Approved requests can't be edited");
+  if (!["NEW", "SAMPLING", "QUOTED"].includes(order.requestStatus)) throw new UserError("Approved requests can't be edited");
   await prisma.$transaction(async (tx) => {
     await tx.order.update({ where: { id: orderId }, data: { ...input, targetBudgetBdt: input.targetBudgetBdt ?? null, typeOverridden: true } });
     await logChanges(tx, {
@@ -359,12 +345,9 @@ export function isReleasedForPurchase(order: { requestStatus: string; payments: 
   return order.requestStatus === "CUSTOMER_APPROVED" && hasAdvance(order.payments);
 }
 
-/**
- * Buy for Me requests still waiting for the China team's quotation (including
- * any left New from before requests were sent to China automatically).
- */
+/** Buy for Me requests still waiting for the China team's quotation. */
 export const awaitingQuoteWhere: Prisma.OrderWhereInput = {
-  requestStatus: { in: ["NEW", "SENT_TO_CHINA"] },
+  requestStatus: "NEW",
   status: { notIn: ["ON_HOLD", "CANCELLED"] },
   estimates: { none: { status: { in: ["SUBMITTED_BY_CHINA", "REVIEWED_BY_BD", "SENT_TO_CUSTOMER"] } } },
 };
@@ -374,7 +357,7 @@ export async function chinaInbox() {
   const [sent, awaitingAdvance] = await Promise.all([
     prisma.order.findMany({
       // Waiting on China: no quotation submitted yet (drafts count as waiting).
-      where: { requestStatus: "SENT_TO_CHINA", status: { not: "ON_HOLD" }, estimates: { none: { status: { in: ["SUBMITTED_BY_CHINA", "REVIEWED_BY_BD", "SENT_TO_CUSTOMER"] } } } },
+      where: { requestStatus: "NEW", status: { not: "ON_HOLD" }, estimates: { none: { status: { in: ["SUBMITTED_BY_CHINA", "REVIEWED_BY_BD", "SENT_TO_CUSTOMER"] } } } },
       orderBy: [{ priority: "desc" }, { requestedAt: "asc" }],
       include: { customer: { select: { code: true } }, lines: { select: { id: true, quotedUnitPriceRmb: true, status: true } }, estimates: { where: { status: "DRAFT" }, select: { id: true } } },
     }),
