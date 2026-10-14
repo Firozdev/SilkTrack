@@ -6,6 +6,7 @@ export const SETTING_DEFAULTS = {
   bulk_threshold: { quantity: 50, valueBdt: "50000.00" },
   price_change_alert_pct: "5",
   bd_weight_tolerance_pct: "5",
+  /** Home delivery used until the first shipping rate is added (see ShippingRate). */
   default_local_delivery_bdt: "120.00",
 } as const;
 

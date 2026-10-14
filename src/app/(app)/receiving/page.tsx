@@ -7,6 +7,7 @@ import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { findByTracking, listReceivings } from "@/server/receiving";
+import { findShippingByTracking, shippingNo } from "@/server/shipping-orders";
 
 export default async function ReceivingPage({ searchParams }: PageProps<"/receiving">) {
   const user = await requireUser();
@@ -15,8 +16,9 @@ export default async function ReceivingPage({ searchParams }: PageProps<"/receiv
   const status = (["READY_TO_SHIP", "IN_SHIPMENT", "REPACKED"] as const).find((s) => s === sp.status);
   const canReceive = can(user.role, "receiving:edit");
 
-  const [matches, list, awaiting] = await Promise.all([
+  const [matches, shippingMatches, list, awaiting] = await Promise.all([
     q ? findByTracking(q) : Promise.resolve([]),
+    q ? findShippingByTracking(q) : Promise.resolve([]),
     listReceivings(status),
     prisma.supplierOrder.findMany({
       where: { status: { in: ["PURCHASED", "SHIPPED_BY_SUPPLIER"] } },
@@ -37,8 +39,22 @@ export default async function ReceivingPage({ searchParams }: PageProps<"/receiv
           </form>
           {q && (
             <div className="mt-3">
-              {matches.length === 0 ? (
-                <p className="text-sm text-red-600">No purchase found with tracking number “{q}”.</p>
+              {shippingMatches.length > 0 && (
+                <ul className="mb-2 space-y-2">
+                  {shippingMatches.map((m) => (
+                    <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-blue-100 bg-blue-50/40 p-2 text-sm">
+                      <span>
+                        <b>{shippingNo(m)}</b> <Badge value="REQUESTED" label="Shipping service" /> · {m.customer.code} · {m.items.map((i) => `${i.productName} × ${i.quantity}${i.trackingNo ? ` (${i.trackingNo})` : ""}`).join(", ")}
+                      </span>
+                      <Link href={`/shipping-orders/${m.id}`} className={btnPrimaryCls}>
+                        {m.status === "REQUESTED" ? "Receive →" : "Open →"}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {matches.length === 0 && shippingMatches.length === 0 ? (
+                <p className="text-sm text-red-600">No purchase or shipping order found with tracking number “{q}”.</p>
               ) : (
                 <ul className="space-y-2">
                   {matches.map((m) => (

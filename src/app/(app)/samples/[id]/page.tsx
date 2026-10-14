@@ -15,6 +15,7 @@ import { acceptingShipments } from "@/server/shipments";
 import { cancelAction, deliverAction, paymentAction, photoAction, purchaseAction, receiveAction } from "../actions";
 import { SampleInvoiceForm, SampleShipForm } from "./sample-forms";
 import { Step, Waiting } from "./step";
+import { CustomerPanel } from "../../customer-panel";
 
 export default async function SamplePage({ params }: PageProps<"/samples/[id]">) {
   const user = await requireUser();
@@ -28,7 +29,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
       invoicedBy: { select: { name: true } },
       purchasedBy: { select: { name: true } },
       shipment: { select: { id: true, code: true } },
-      lines: true,
+      lines: { include: { attachments: { select: { id: true, fileName: true, mimeType: true, uploadedByAccountId: true } } } },
       events: { orderBy: { occurredAt: "asc" }, include: { createdBy: { select: { name: true } } } },
       payments: { orderBy: { paidAt: "asc" } },
       attachments: { select: { id: true, fileName: true, mimeType: true } },
@@ -60,6 +61,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
       />
       {s.status === "CANCELLED" && <Alert tone="error">This sample was cancelled – see the tracking below for the reason.</Alert>}
       {s.requestNote && <Alert tone="info">Request note: {s.requestNote}</Alert>}
+      {bd && <CustomerPanel kind="sample" id={s.id} tz={user.timezone} />}
 
       <div className="grid gap-5 xl:grid-cols-3">
         <div className="space-y-5 xl:col-span-2">
@@ -73,6 +75,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                       link ↗
                     </a>
                   )}
+                  <Attachments items={l.attachments} />
                 </li>
               ))}
             </ul>

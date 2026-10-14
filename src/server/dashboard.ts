@@ -3,9 +3,14 @@ import type { OrderStatus } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { BD_TZ, CN_TZ, addDays, isoWeek, isoWeekStart, today } from "@/lib/dates";
 import { D, sum } from "@/lib/money";
+import { docNo } from "@/lib/format";
+import { assertCan } from "@/lib/permissions";
+import type { Actor } from "./actor";
 import { ORDER_FLOW } from "./status";
 import { purchaseQueue } from "./purchasing";
 import { acceptingShipments } from "./shipments";
+import { awaitingQuoteWhere } from "./requests";
+import { submissionNo } from "./payment-submissions";
 
 const ACTIVE: OrderStatus[] = ORDER_FLOW.filter((s) => s !== "DELIVERED");
 
@@ -177,4 +182,69 @@ export async function managementDashboard(now = new Date()) {
     byShipment,
     leadTimes,
   };
+}
+
+export type InboxItem = { id: string; no: string; customer: string | null; at: Date; href: string; tag?: string };
+export type InboxPanel = { key: "buy" | "ship" | "payments" | "issues"; title: string; hint: string; href: string; count: number; items: InboxItem[] };
+
+const INBOX_LATEST = 5;
+const OPEN_ISSUE = ["OPEN", "IN_PROGRESS"] as const;
+
+/**
+ * Admin's "New Requests" panels: what came in and nobody has actioned yet.
+ * Each item drops out once actioned (quoted by China, received in China,
+ * payment approved/rejected, issue resolved/closed).
+ */
+export async function adminInbox(actor: Actor): Promise<InboxPanel[]> {
+  assertCan(actor.role, "dashboard:adminInbox");
+  const shipWhere = { status: "REQUESTED" as const };
+  const payWhere = { status: "PENDING" as const };
+  const issueWhere = { status: { in: [...OPEN_ISSUE] } };
+  const take = INBOX_LATEST;
+  const customer = { select: { name: true } };
+  const [buyCount, buy, shipCount, ship, payCount, pay, issueCount, issues] = await Promise.all([
+    prisma.order.count({ where: awaitingQuoteWhere }),
+    prisma.order.findMany({ where: awaitingQuoteWhere, orderBy: { requestedAt: "desc" }, take, select: { id: true, number: true, requestedAt: true, source: true, placedByAccount: { select: { kind: true } }, customer } }),
+    prisma.shippingOrder.count({ where: shipWhere }),
+    prisma.shippingOrder.findMany({ where: shipWhere, orderBy: { createdAt: "desc" }, take, select: { id: true, number: true, createdAt: true, source: true, placedByAccount: { select: { kind: true } }, customer } }),
+    prisma.paymentSubmission.count({ where: payWhere }),
+    prisma.paymentSubmission.findMany({ where: payWhere, orderBy: { createdAt: "desc" }, take, select: { id: true, number: true, createdAt: true, customer } }),
+    prisma.issue.count({ where: issueWhere }),
+    prisma.issue.findMany({ where: issueWhere, orderBy: { createdAt: "desc" }, take, select: { id: true, number: true, createdAt: true, type: true, order: { select: { customer } } } }),
+  ]);
+  const via = (r: { source: string; placedByAccount: { kind: string } | null }) => (r.placedByAccount?.kind === "AGENT" ? "Agent" : r.source === "PORTAL" ? "Portal" : "Staff");
+  return [
+    {
+      key: "buy",
+      title: "Buy for Me",
+      hint: "waiting for China's quotation",
+      href: "/requests?rs=AWAITING_QUOTE",
+      count: buyCount,
+      items: buy.map((o) => ({ id: o.id, no: docNo("order", o.number), customer: o.customer.name, at: o.requestedAt, href: `/requests/${o.id}`, tag: via(o) })),
+    },
+    {
+      key: "ship",
+      title: "Ship for Me",
+      hint: "goods not received in China yet",
+      href: "/shipping-orders?status=REQUESTED",
+      count: shipCount,
+      items: ship.map((s) => ({ id: s.id, no: docNo("shippingOrder", s.number), customer: s.customer.name, at: s.createdAt, href: `/shipping-orders/${s.id}`, tag: via(s) })),
+    },
+    {
+      key: "payments",
+      title: "Payment Confirmation",
+      hint: "reported by customers, to confirm",
+      href: "/payments-to-verify",
+      count: payCount,
+      items: pay.map((p) => ({ id: p.id, no: submissionNo(p), customer: p.customer.name, at: p.createdAt, href: `/payments-to-verify?id=${p.id}` })),
+    },
+    {
+      key: "issues",
+      title: "Issues",
+      hint: "open or in progress",
+      href: "/issues",
+      count: issueCount,
+      items: issues.map((i) => ({ id: i.id, no: docNo("issue", i.number), customer: i.order?.customer.name ?? null, at: i.createdAt, href: `/issues?id=${i.id}`, tag: i.type })),
+    },
+  ];
 }

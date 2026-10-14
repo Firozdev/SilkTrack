@@ -6,7 +6,7 @@ import { Card, Field, inputCls } from "@/components/ui";
 import { saveQuotationAction } from "./actions";
 
 export type QLine = { id: string; lineNo: number; productName: string; variant: string; quantity: number; link?: string };
-type LineVals = { unitPriceRmb: string; moq: string; unitWeightKg: string; cartonCount: string; lengthCm: string; widthCm: string; heightCm: string; sellingPriceBdt: string };
+type LineVals = { unitPriceRmb: string; moq: string; unitWeightKg: string; cartonCount: string; lengthCm: string; widthCm: string; heightCm: string; sellingUnitBdt: string };
 export type QInitial = {
   shippingMethod: "AIR" | "SEA";
   shippingRatePerKgRmb: string;
@@ -30,7 +30,7 @@ export function QuotationForm({ orderId, lines, initial, canSetSelling, rate }: 
     Object.fromEntries(
       lines.map((l) => [
         l.id,
-        { unitPriceRmb: "", moq: "", unitWeightKg: "", cartonCount: "", lengthCm: "", widthCm: "", heightCm: "", sellingPriceBdt: "", ...initial.lines[l.id] },
+        { unitPriceRmb: "", moq: "", unitWeightKg: "", cartonCount: "", lengthCm: "", widthCm: "", heightCm: "", sellingUnitBdt: "", ...initial.lines[l.id] },
       ]),
     ),
   );
@@ -54,7 +54,7 @@ export function QuotationForm({ orderId, lines, initial, canSetSelling, rate }: 
   const shipping = h.shippingMethod === "AIR" ? weight * n(h.shippingRatePerKgRmb) : cbm * n(h.shippingRatePerCbmRmb);
   const total = subtotal + china + shipping;
   const r = rate ? Number(rate) : 0;
-  const selling = lines.reduce((a, l) => a + n(vals[l.id].sellingPriceBdt), 0);
+  const selling = lines.reduce((a, l) => a + n(vals[l.id].sellingUnitBdt) * l.quantity, 0);
 
   return (
     <ActionForm action={saveQuotationAction} submitLabel="Save & submit to Bangladesh" secondary={{ label: "Save draft", name: "intent", value: "draft" }} className="max-w-6xl">
@@ -110,8 +110,8 @@ export function QuotationForm({ orderId, lines, initial, canSetSelling, rate }: 
                     <input name={nm("heightCm")} value={v.heightCm} onChange={(e) => setLine(l.id, "heightCm", e.target.value)} inputMode="decimal" className={inputCls} />
                   </Field>
                   {canSetSelling && (
-                    <Field label="Selling ৳ (line)">
-                      <input name={nm("sellingPriceBdt")} value={v.sellingPriceBdt} onChange={(e) => setLine(l.id, "sellingPriceBdt", e.target.value)} inputMode="decimal" className={inputCls} />
+                    <Field label="Selling ৳ per unit" hint={v.sellingUnitBdt ? `line ৳${fmt(n(v.sellingUnitBdt) * l.quantity)}` : undefined}>
+                      <input name={nm("sellingUnitBdt")} value={v.sellingUnitBdt} onChange={(e) => setLine(l.id, "sellingUnitBdt", e.target.value)} inputMode="decimal" className={inputCls} />
                     </Field>
                   )}
                 </div>

@@ -34,6 +34,7 @@ const PREFIX = {
   claim: "CLM",
   payment: "PAY",
   sample: "SMP",
+  shippingOrder: "SHO",
 } as const;
 
 /** REQ-000123 etc. */

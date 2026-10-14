@@ -53,7 +53,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             <>No rate exists yet – prices cannot be converted.</>
           )}{" "}
           {user.role === "ADMIN" && (
-            <Link href="/rates" className="font-semibold underline">
+            <Link href="/settings/exchange-rates" className="font-semibold underline">
               Enter today&apos;s rate
             </Link>
           )}

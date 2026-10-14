@@ -6,19 +6,22 @@ import { docNo, humanize, parseDocNo } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { chinaInbox } from "@/server/requests";
+import { awaitingQuoteWhere, chinaInbox } from "@/server/requests";
 
 const REQUEST_STATUSES = ["NEW", "SENT_TO_CHINA", "SAMPLING", "QUOTED", "CUSTOMER_APPROVED", "REJECTED", "CANCELLED"] as const;
+/** Not a status: requests still waiting for China's quotation (the dashboard's Buy for Me panel). */
+const AWAITING_QUOTE = "AWAITING_QUOTE";
 
 export default async function RequestsPage({ searchParams }: PageProps<"/requests">) {
   const user = await requireUser();
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
-  const rs = typeof sp.rs === "string" && (REQUEST_STATUSES as readonly string[]).includes(sp.rs) ? sp.rs : "";
+  const rs = typeof sp.rs === "string" && ([...REQUEST_STATUSES, AWAITING_QUOTE] as readonly string[]).includes(sp.rs) ? sp.rs : "";
   const type = sp.type === "SINGLE" || sp.type === "BULK" ? sp.type : "";
 
   const where: Prisma.OrderWhereInput = {};
-  if (rs) where.requestStatus = rs as (typeof REQUEST_STATUSES)[number];
+  if (rs === AWAITING_QUOTE) Object.assign(where, awaitingQuoteWhere);
+  else if (rs) where.requestStatus = rs as (typeof REQUEST_STATUSES)[number];
   if (type) where.type = type;
   if (q) {
     const n = parseDocNo(q);
@@ -80,6 +83,7 @@ export default async function RequestsPage({ searchParams }: PageProps<"/request
           <input name="q" defaultValue={q} placeholder="Search REQ/SMP no., customer, phone, product" className={`${inputCls} max-w-xs`} />
           <select name="rs" defaultValue={rs} className={`${inputCls} max-w-[12rem]`}>
             <option value="">All request statuses</option>
+            <option value={AWAITING_QUOTE}>awaiting China quote</option>
             {REQUEST_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {s.replace(/_/g, " ").toLowerCase()}
@@ -123,7 +127,7 @@ export default async function RequestsPage({ searchParams }: PageProps<"/request
                       </div>
                     ))}
               </td>
-              <td className={tdCls}>{o.createdBy.name}</td>
+              <td className={tdCls}>{o.createdBy?.name ?? <span className="text-blue-700">Customer portal</span>}</td>
             </tr>
           ))}
         </Table>

@@ -63,23 +63,24 @@ export async function suggestShipment(tx: Tx, method: ShippingMethod, now = new 
   return createWeek(tx, year, week, method, "OPEN");
 }
 
-/** Recompute cached totals from the parcels and samples in the shipment. */
+/** Recompute cached totals from the parcels, samples and shipping-only orders in the shipment. */
 export async function recalcTotals(tx: Tx, shipmentId: string) {
-  const [items, samples] = await Promise.all([
+  const [items, samples, shipping] = await Promise.all([
     tx.receiving.findMany({
       where: { shipmentId, status: { not: "REPACKED" } },
       select: { cartonCount: true, netWeightKg: true, grossWeightKg: true, cbm: true },
     }),
     tx.sample.findMany({ where: { shipmentId, status: { not: "CANCELLED" } }, select: { cartonCount: true, weightKg: true, cbm: true } }),
+    tx.shippingOrder.findMany({ where: { shipmentId, status: { not: "CANCELLED" } }, select: { cartonCount: true, grossWeightKg: true, cbm: true } }),
   ]);
   await tx.shipment.update({
     where: { id: shipmentId },
     data: {
-      itemCount: items.length + samples.length,
-      cartonCount: items.reduce((a, i) => a + i.cartonCount, 0) + samples.reduce((a, s) => a + (s.cartonCount ?? 1), 0),
+      itemCount: items.length + samples.length + shipping.length,
+      cartonCount: items.reduce((a, i) => a + i.cartonCount, 0) + samples.reduce((a, s) => a + (s.cartonCount ?? 1), 0) + shipping.reduce((a, s) => a + (s.cartonCount ?? 1), 0),
       netWeightKg: sum(items.map((i) => i.netWeightKg)),
-      grossWeightKg: sum([...items.map((i) => i.grossWeightKg), ...samples.map((s) => s.weightKg)]),
-      cbm: sum([...items.map((i) => i.cbm), ...samples.map((s) => s.cbm)]),
+      grossWeightKg: sum([...items.map((i) => i.grossWeightKg), ...samples.map((s) => s.weightKg), ...shipping.map((s) => s.grossWeightKg)]),
+      cbm: sum([...items.map((i) => i.cbm), ...samples.map((s) => s.cbm), ...shipping.map((s) => s.cbm)]),
     },
   });
 }
@@ -269,6 +270,8 @@ export async function setShipmentStatus(actor: Actor, id: string, status: Shipme
     if (["DEPARTED", "IN_TRANSIT", "ARRIVED_BD", "CUSTOMS_CLEARED"].includes(status)) {
       const samples = await tx.sample.findMany({ where: { shipmentId: id, status: "SHIPPED" }, select: { id: true } });
       for (const smp of samples) await tx.sampleEvent.create({ data: { sampleId: smp.id, message, createdById: actor.id } });
+      const shipping = await tx.shippingOrder.findMany({ where: { shipmentId: id, status: "IN_SHIPMENT" }, select: { id: true } });
+      for (const so of shipping) await tx.shippingOrderEvent.create({ data: { shippingOrderId: so.id, message, createdById: actor.id } });
     }
     if (status === "CLOSED" || (from < SHIPMENT_FLOW.indexOf("CLOSED") && to > SHIPMENT_FLOW.indexOf("CLOSED"))) {
       const next = isoWeek(addDays(isoWeekStart(s.year, s.weekNumber), 7));
@@ -372,7 +375,27 @@ export async function packingList(shipmentId: string) {
       cbm: s.cbm?.toString() ?? "",
     })),
   );
-  return [...sampleRows, ...parcels.flatMap((p) =>
+  const shippingOrders = await prisma.shippingOrder.findMany({
+    where: { shipmentId, status: { not: "CANCELLED" } },
+    include: { customer: { select: { code: true, name: true, phone: true, district: true } }, items: { orderBy: { lineNo: "asc" } } },
+  });
+  const shippingRows = shippingOrders.flatMap((s) =>
+    s.items.map((i) => ({
+      customerCode: s.customer.code,
+      customerName: s.customer.name,
+      phone: s.customer.phone,
+      district: s.customer.district ?? "",
+      order: "",
+      parcel: docNo("shippingOrder", s.number),
+      cartonMark: s.cartonMark ?? "",
+      product: [i.productName, i.description].filter(Boolean).join(" / "),
+      qty: i.quantityReceived ?? i.quantity,
+      cartons: s.cartonCount ?? 1,
+      grossKg: s.grossWeightKg?.toString() ?? "",
+      cbm: s.cbm?.toString() ?? "",
+    })),
+  );
+  return [...sampleRows, ...shippingRows, ...parcels.flatMap((p) =>
     p.lines.map((l) => ({
       customerCode: l.orderLine.order.customer.code,
       customerName: l.orderLine.order.customer.name,

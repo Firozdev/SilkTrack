@@ -52,7 +52,8 @@ export async function quotationFormData(orderId: string, viewer: Viewer) {
           lengthCm: s(l.lengthCm),
           widthCm: s(l.widthCm),
           heightCm: s(l.heightCm),
-          sellingPriceBdt: selling ? s(l.sellingPriceBdt) : "",
+          // The form takes the price per unit; stored as the line total.
+          sellingUnitBdt: selling && l.sellingPriceBdt && l.quantity > 0 ? l.sellingPriceBdt.div(l.quantity).toDecimalPlaces(2).toString() : "",
         },
       ]),
     ),

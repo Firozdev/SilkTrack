@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { redactFor, type Viewer } from "@/lib/permissions";
 
-const att = { select: { id: true, fileName: true, mimeType: true } } as const;
+const att = { select: { id: true, fileName: true, mimeType: true, uploadedByAccountId: true } } as const;
 
 /** Everything shown on the order page, redacted for the viewer's role. */
 export async function getOrderView(orderId: string, viewer: Viewer) {
@@ -11,6 +11,7 @@ export async function getOrderView(orderId: string, viewer: Viewer) {
     include: {
       customer: true,
       createdBy: { select: { name: true } },
+      placedByAccount: { select: { name: true, kind: true } },
       lines: {
         orderBy: { lineNo: "asc" },
         include: {

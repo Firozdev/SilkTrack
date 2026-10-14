@@ -13,9 +13,14 @@ import {
   reviseQuotation,
   saveQuotation,
   sendQuotationToCustomer,
-  setSellingPrices,
+  setUnitSellingPrices,
   submitQuotation,
 } from "@/server/estimates";
+import { prisma } from "@/lib/prisma";
+import { D, money } from "@/lib/money";
+
+/** Selling prices are entered per unit and stored as line totals. */
+const lineTotal = (unit: string, qty: number) => money(D(unit).mul(qty)).toString();
 
 const optInt = z.preprocess((v) => (v === "" ? undefined : v), zIntMin0.optional());
 
@@ -36,7 +41,7 @@ export const saveQuotationAction = formAction(async (fd) => {
       intent: z.enum(["draft", "submit"]).default("submit"),
     })
     .parse(fields(fd));
-  const lines = rows(fd, "l").map((r) =>
+  const parsed = rows(fd, "l").map((r) =>
     z
       .object({
         orderLineId: z.string(),
@@ -47,10 +52,13 @@ export const saveQuotationAction = formAction(async (fd) => {
         lengthCm: zDecOpt,
         widthCm: zDecOpt,
         heightCm: zDecOpt,
-        sellingPriceBdt: zDecOpt,
+        sellingUnitBdt: zDecOpt,
       })
       .parse(r),
   );
+  // Selling prices are entered per unit; stored as line totals (× the order line's quantity).
+  const qty = new Map((await prisma.orderLine.findMany({ where: { orderId: h.orderId }, select: { id: true, quantity: true } })).map((l) => [l.id, l.quantity]));
+  const lines = parsed.map(({ sellingUnitBdt, ...l }) => ({ ...l, sellingPriceBdt: sellingUnitBdt ? lineTotal(sellingUnitBdt, qty.get(l.orderLineId) ?? 0) : undefined }));
   const e = await saveQuotation(user, h.orderId, { ...h, validUntil: dayFromYmd(h.validUntil), lines });
   if (h.intent === "submit") await submitQuotation(user, e.id);
   revalidatePath(`/requests/${h.orderId}`);
@@ -75,7 +83,8 @@ export const sendAction = step((u, id) => sendQuotationToCustomer(u, id), "Sent 
 export const approveAction = step((u, id) => approveQuotation(u, id), "Customer approved – the order is in the China purchase queue.");
 export const rejectAction = step((u, id) => rejectQuotation(u, id), "Marked as rejected.");
 export const reviseAction = step((u, id, fd) => reviseQuotation(u, id, z.string().trim().optional().parse(fd.get("reason") ?? undefined) || undefined), "New version created.");
+/** CS enters prices per unit; stored as line totals (unit × the line's quantity from the database). */
 export const sellingAction = step(async (u, id, fd) => {
-  const lines = rows(fd, "s").map((r) => z.object({ lineId: z.string(), sellingPriceBdt: zDec }).parse(r));
-  await setSellingPrices(u, id, lines);
+  const lines = rows(fd, "s").map((r) => z.object({ lineId: z.string(), unitPriceBdt: zDec }).parse(r));
+  await setUnitSellingPrices(u, id, lines);
 }, "Selling prices saved.");

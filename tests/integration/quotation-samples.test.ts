@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError } from "@/lib/permissions";
 import { BD_TZ, toYmd, today } from "@/lib/dates";
-import { createRequest, sendToChina } from "@/server/requests";
+import { createRequest } from "@/server/requests";
 import { approveQuotation, reviseQuotation, saveQuotation, sendQuotationToCustomer, setSellingPrices, submitQuotation, type QuotationInput } from "@/server/estimates";
 import { cancelSample, deliverSample, invoiceSample, purchaseSample, receiveSampleBd, recordSamplePayment, requestSample, shipSample } from "@/server/samples";
 import { purchaseQueue } from "@/server/purchasing";
@@ -21,7 +21,6 @@ async function sentRequest() {
       { productName: "Shade", quantity: 4, links: [] },
     ],
   });
-  await sendToChina(cs, order.id);
   return order;
 }
 
@@ -72,7 +71,8 @@ describe("China quotation", () => {
 
     const e2 = await saveQuotation(chinaSeller, order.id, withSelling);
     expect(e2.grandTotalBdt?.toString()).toBe("12000");
-    expect(e2.marginBdt?.toString()).toBe("1615.5"); // 12000 − 10384.5
+    // Selling prices are product prices: margin = 12000 − product cost (10384.5 total − 5727 shipping)
+    expect(e2.marginBdt?.toString()).toBe("7342.5");
   });
 
   it("BD prices and sends, approval puts it in the purchase queue; expired needs re-pricing", async () => {

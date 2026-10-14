@@ -9,6 +9,7 @@ import { docNo } from "@/lib/format";
 import { logChanges } from "@/lib/audit";
 import { getSetting } from "@/lib/settings";
 import { notifyRoles } from "@/lib/notify";
+import { portalRequestEditable } from "@/lib/editability";
 import { deriveOrderStatus, setLineStatus, setOrderStatus } from "./status";
 import type { Actor } from "./actor";
 
@@ -68,7 +69,7 @@ export async function findDuplicateLinks(urls: string[], excludeOrderId?: string
   });
 }
 
-export async function findOrCreateCustomer(tx: Prisma.TransactionClient, c: CustomerInput, actorId: string) {
+export async function findOrCreateCustomer(tx: Prisma.TransactionClient, c: CustomerInput, actorId: string | null) {
   const { id, ...fields } = c;
   const phone = fields.phone.replace(/[^\d+]/g, "");
   const data = {
@@ -100,6 +101,27 @@ export async function findOrCreateCustomer(tx: Prisma.TransactionClient, c: Cust
 
 export async function createRequest(actor: Actor, input: RequestInput) {
   assertCan(actor.role, "request:edit");
+  return insertRequest(input, { actorId: actor.id, source: "STAFF" });
+}
+
+export type PortalRequestInput = Omit<RequestInput, "customer" | "type" | "priority" | "allowDuplicates" | "specialInstructions">;
+
+/**
+ * A customer submits a request in the portal. No duplicate-link check (it would
+ * reveal other customers' orders); it goes straight to the China team like a staff request.
+ */
+export async function createPortalRequest(customerId: string, input: PortalRequestInput, placedBy?: PlacedBy) {
+  const res = await insertRequest({ ...input, customer: { id: customerId, name: "", phone: "", address: "" }, allowDuplicates: true }, { source: "PORTAL", customerId, accountId: placedBy?.accountId });
+  const from = placedBy?.agentName ? `agent ${placedBy.agentName}` : "a customer";
+  await notifyRoles(["CS", "ADMIN"], { type: "PORTAL_REQUEST", title: `Portal request: ${docNo("order", res.order.number)}`, body: `${res.order.lines.length} product(s) from ${from} – sent to the China team for a quotation.`, orderId: res.order.id });
+  return res;
+}
+
+/** The portal login that placed a request: the customer's own, or their agent's (agentName set). */
+export type PlacedBy = { accountId: string; agentName?: string };
+
+async function insertRequest(input: RequestInput, by: { actorId: string; source: "STAFF" } | { source: "PORTAL"; customerId: string; accountId?: string }) {
+  const actorId = by.source === "STAFF" ? by.actorId : null;
   if (input.lines.length === 0) throw new UserError("Add at least one product");
 
   const allLinks = input.lines.flatMap((l) => l.links);
@@ -122,11 +144,15 @@ export async function createRequest(actor: Actor, input: RequestInput) {
   const type = input.type ?? suggested;
 
   const order = await prisma.$transaction(async (tx) => {
-    const customer = await findOrCreateCustomer(tx, input.customer, actor.id);
+    const customerId = by.source === "PORTAL" ? by.customerId : (await findOrCreateCustomer(tx, input.customer, by.actorId)).id;
     const order = await tx.order.create({
       data: {
-        customerId: customer.id,
-        createdById: actor.id,
+        customerId,
+        source: by.source,
+        createdById: actorId,
+        placedByAccountId: by.source === "PORTAL" ? (by.accountId ?? null) : null,
+        // New requests go straight to the China team for a quotation (decision 2026-10-14).
+        requestStatus: "SENT_TO_CHINA",
         type,
         typeOverridden: type !== suggested,
         shippingMethod: input.shippingMethod,
@@ -144,16 +170,28 @@ export async function createRequest(actor: Actor, input: RequestInput) {
             quantity: l.quantity,
             notes: l.notes,
             links: { create: l.links.map((url) => ({ url, normalizedUrl: normalizeUrl(url), platform: detectPlatform(url) })) },
-            trackingEvents: { create: { leg: "SUPPLIER_TO_CHINA", status: "REQUESTED", message: "Request created", createdById: actor.id } },
+            trackingEvents: { create: { leg: "SUPPLIER_TO_CHINA", status: "REQUESTED", message: by.source === "PORTAL" ? "Request submitted in the customer portal" : "Request created", createdById: actorId } },
           })),
         },
       },
       include: { lines: { orderBy: { lineNo: "asc" } } },
     });
-    await logChanges(tx, { entityType: "Order", entityId: order.id, userId: actor.id, action: "CREATE" });
+    await logChanges(tx, { entityType: "Order", entityId: order.id, userId: actorId, action: "CREATE" });
+    // Keep the hand-off to China visible in the status history.
+    await logChanges(tx, { entityType: "Order", entityId: order.id, userId: actorId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: "NEW", newValue: "SENT_TO_CHINA" }] });
     return order;
   });
+  await notifyChinaTeam(order);
   return { order, suggestedType: suggested };
+}
+
+async function notifyChinaTeam(order: { id: string; number: number; type: OrderType; shippingMethod: string; lines: unknown[] }) {
+  await notifyRoles(["PURCHASE"], {
+    type: order.type === "BULK" ? "ESTIMATE_REQUESTED" : "NEW_REQUEST",
+    title: order.type === "BULK" ? `Estimate requested: ${docNo("order", order.number)}` : `New request: ${docNo("order", order.number)}`,
+    body: `${order.lines.length} product(s), ${order.shippingMethod.toLowerCase()} shipping.`,
+    orderId: order.id,
+  });
 }
 
 async function loadOrder(orderId: string) {
@@ -162,35 +200,38 @@ async function loadOrder(orderId: string) {
   return order;
 }
 
-async function setRequestStatus(tx: Prisma.TransactionClient, orderId: string, from: string, to: Prisma.OrderUpdateInput["requestStatus"], actorId: string) {
+async function setRequestStatus(tx: Prisma.TransactionClient, orderId: string, from: string, to: Prisma.OrderUpdateInput["requestStatus"], actorId: string | null) {
   await tx.order.update({ where: { id: orderId }, data: { requestStatus: to } });
   await logChanges(tx, { entityType: "Order", entityId: orderId, userId: actorId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: from, newValue: to as string }] });
 }
 
-/** CS hands the request to the China team (price check / estimate). */
+/**
+ * CS hands the request to the China team (price check / estimate). New requests
+ * are sent automatically; this is only for ones created before that, still New.
+ */
 export async function sendToChina(actor: Actor, orderId: string) {
   assertCan(actor.role, "request:edit");
   const order = await loadOrder(orderId);
   if (order.requestStatus !== "NEW") throw new UserError("Only new requests can be sent to China");
   await prisma.$transaction((tx) => setRequestStatus(tx, orderId, order.requestStatus, "SENT_TO_CHINA", actor.id));
-  await notifyRoles(["PURCHASE"], {
-    type: order.type === "BULK" ? "ESTIMATE_REQUESTED" : "NEW_REQUEST",
-    title: order.type === "BULK" ? `Estimate requested: ${docNo("order", order.number)}` : `New request: ${docNo("order", order.number)}`,
-    body: `${order.lines.length} product(s), ${order.shippingMethod.toLowerCase()} shipping.`,
-    orderId,
-  });
+  await notifyChinaTeam(order);
 }
 
 /** Customer accepted the quote. Purchase is released once an advance is recorded. */
 export async function markCustomerApproved(actor: Actor, orderId: string) {
   assertCan(actor.role, "quote:edit");
+  await applyCustomerApproval(orderId, actor.id, "Customer approved the quote");
+}
+
+/** Shared by CS (actorId) and the customer in the portal (null). */
+export async function applyCustomerApproval(orderId: string, actorId: string | null, message: string) {
   const order = await loadOrder(orderId);
   if (order.requestStatus !== "QUOTED" && order.requestStatus !== "SAMPLING") throw new UserError("Only quoted requests can be approved");
   const unpriced = order.lines.filter((l) => l.status !== "CANCELLED" && !l.quotedUnitPriceRmb);
   if (unpriced.length) throw new UserError("Every product needs a quoted price before approval");
   await prisma.$transaction(async (tx) => {
-    await setRequestStatus(tx, orderId, order.requestStatus, "CUSTOMER_APPROVED", actor.id);
-    await setLineStatus(tx, order.lines.map((l) => l.id), "APPROVED", { actorId: actor.id, message: "Customer approved the quote", onlyForward: true });
+    await setRequestStatus(tx, orderId, order.requestStatus, "CUSTOMER_APPROVED", actorId);
+    await setLineStatus(tx, order.lines.map((l) => l.id), "APPROVED", { actorId, message, onlyForward: true });
   });
   if (hasAdvance(order.payments)) {
     await notifyPurchaseReleased(order.id, order.number);
@@ -219,11 +260,15 @@ async function notifyPurchaseReleased(orderId: string, number: number) {
 
 export async function markRejected(actor: Actor, orderId: string) {
   assertCan(actor.role, "quote:edit");
+  await applyCustomerRejection(orderId, actor.id, "Customer rejected the quote");
+}
+
+export async function applyCustomerRejection(orderId: string, actorId: string | null, message: string) {
   const order = await loadOrder(orderId);
   if (!["QUOTED", "SAMPLING", "SENT_TO_CHINA", "NEW"].includes(order.requestStatus)) throw new UserError("This request can't be rejected now");
   await prisma.$transaction(async (tx) => {
-    await setRequestStatus(tx, orderId, order.requestStatus, "REJECTED", actor.id);
-    await setLineStatus(tx, order.lines.map((l) => l.id), "CANCELLED", { actorId: actor.id, message: "Customer rejected the quote" });
+    await setRequestStatus(tx, orderId, order.requestStatus, "REJECTED", actorId);
+    await setLineStatus(tx, order.lines.map((l) => l.id), "CANCELLED", { actorId, message });
   });
 }
 
@@ -330,6 +375,16 @@ export function isReleasedForPurchase(order: { requestStatus: string; payments: 
   return order.requestStatus === "CUSTOMER_APPROVED" && hasAdvance(order.payments);
 }
 
+/**
+ * Buy for Me requests still waiting for the China team's quotation (including
+ * any left New from before requests were sent to China automatically).
+ */
+export const awaitingQuoteWhere: Prisma.OrderWhereInput = {
+  requestStatus: { in: ["NEW", "SENT_TO_CHINA"] },
+  status: { notIn: ["ON_HOLD", "CANCELLED"] },
+  estimates: { none: { status: { in: ["SUBMITTED_BY_CHINA", "REVIEWED_BY_BD", "SENT_TO_CUSTOMER"] } } },
+};
+
 /** Requests waiting on the China team, and upfront-payment requests waiting on BD. */
 export async function chinaInbox() {
   const [sent, awaitingAdvance] = await Promise.all([
@@ -346,4 +401,84 @@ export async function chinaInbox() {
     }),
   ]);
   return { sent, awaitingAdvance };
+}
+
+// ───────────────────────── Customer edits in the portal ─────────────────────────
+
+export type PortalLineEdit = LineInput & { id?: string };
+export type PortalRequestEdit = Omit<PortalRequestInput, "lines"> & { lines: PortalLineEdit[] };
+
+async function loadForPortalEdit(customerId: string, orderId: string) {
+  const order = await prisma.order.findFirst({ where: { id: orderId, customerId }, include: { lines: { include: { links: true } }, _count: { select: { estimates: true } } } });
+  if (!order) throw new UserError("Not found");
+  if (!portalRequestEditable({ requestStatus: order.requestStatus, estimateCount: order._count.estimates })) {
+    throw new UserError("This request can't be changed any more – message us and we will help");
+  }
+  return order;
+}
+
+/**
+ * The customer changes their request before we start quoting: header, lines
+ * (add / change / remove) and links. Returns the line id for each input line,
+ * in order (to attach new files).
+ */
+export async function updatePortalRequest(customerId: string, orderId: string, input: PortalRequestEdit) {
+  const order = await loadForPortalEdit(customerId, orderId);
+  const lines = input.lines.filter((l) => l.productName.trim() && l.quantity > 0);
+  if (!lines.length) throw new UserError("Add at least one product");
+  const own = new Map(order.lines.map((l) => [l.id, l]));
+  if (lines.some((l) => l.id && !own.has(l.id))) throw new UserError("Not found");
+  const keep = new Set(lines.map((l) => l.id).filter(Boolean));
+  const removed = order.lines.filter((l) => !keep.has(l.id));
+  const threshold = await getSetting("bulk_threshold");
+  const suggested = suggestType(lines.reduce((a, l) => a + l.quantity, 0), input.targetBudgetBdt, threshold);
+  let nextNo = Math.max(0, ...order.lines.map((l) => l.lineNo)) + 1;
+
+  const ids = await prisma.$transaction(async (tx) => {
+    await tx.order.update({
+      where: { id: orderId },
+      data: { shippingMethod: input.shippingMethod, targetBudgetBdt: input.targetBudgetBdt ?? null, customerNotes: input.customerNotes ?? null, ...(order.typeOverridden ? {} : { type: suggested }) },
+    });
+    if (removed.length) await tx.orderLine.deleteMany({ where: { id: { in: removed.map((l) => l.id) } } });
+    const ids: string[] = [];
+    for (const l of lines) {
+      const data = { productName: l.productName.trim(), color: l.color ?? null, size: l.size ?? null, model: l.model ?? null, quantity: l.quantity, notes: l.notes ?? null };
+      const links = l.links.map((url) => ({ url, normalizedUrl: normalizeUrl(url), platform: detectPlatform(url) }));
+      if (l.id) {
+        await tx.orderLine.update({ where: { id: l.id }, data });
+        const before = own.get(l.id)!.links.map((x) => x.url).sort().join("\n");
+        if (before !== [...l.links].sort().join("\n")) {
+          await tx.productLink.deleteMany({ where: { orderLineId: l.id } });
+          if (links.length) await tx.productLink.createMany({ data: links.map((x) => ({ ...x, orderLineId: l.id! })) });
+        }
+        ids.push(l.id);
+      } else {
+        const created = await tx.orderLine.create({
+          data: { orderId, lineNo: nextNo++, ...data, links: { create: links }, trackingEvents: { create: { leg: "SUPPLIER_TO_CHINA", status: "REQUESTED", message: "Added by the customer in the portal" } } },
+        });
+        ids.push(created.id);
+      }
+    }
+    const summary = [`${lines.length} product(s)`, removed.length ? `${removed.length} removed` : "", lines.some((l) => !l.id) ? `${lines.filter((l) => !l.id).length} added` : ""].filter(Boolean).join(", ");
+    await logChanges(tx, { entityType: "Order", entityId: orderId, userId: null, action: "UPDATE", changes: [{ field: "customerEdit", oldValue: null, newValue: summary }] });
+    return ids;
+  });
+  await notifyRoles(order.requestStatus === "SENT_TO_CHINA" ? ["CS", "ADMIN", "PURCHASE"] : ["CS", "ADMIN"], {
+    type: "PORTAL_REQUEST_EDITED",
+    title: `Customer changed request ${docNo("order", order.number)}`,
+    body: "Check the updated products before quoting.",
+    orderId,
+  });
+  return ids;
+}
+
+/** The customer cancels their request before we start quoting. */
+export async function cancelPortalRequest(customerId: string, orderId: string, reason?: string) {
+  const order = await loadForPortalEdit(customerId, orderId);
+  const msg = `Cancelled by the customer in the portal${reason ? `: ${reason}` : ""}`;
+  await prisma.$transaction(async (tx) => {
+    await setRequestStatus(tx, orderId, order.requestStatus, "CANCELLED", null);
+    await setLineStatus(tx, order.lines.map((l) => l.id), "CANCELLED", { actorId: null, message: msg });
+  });
+  await notifyRoles(order.requestStatus === "SENT_TO_CHINA" ? ["CS", "ADMIN", "PURCHASE"] : ["CS", "ADMIN"], { type: "PORTAL_REQUEST_CANCELLED", title: `Customer cancelled ${docNo("order", order.number)}`, body: reason ?? "No reason given.", orderId });
 }

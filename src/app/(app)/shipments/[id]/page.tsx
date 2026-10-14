@@ -16,6 +16,7 @@ export default async function ShipmentPage({ params }: PageProps<"/shipments/[id
     where: { id },
     include: {
       samples: { where: { status: { not: "CANCELLED" } }, orderBy: { number: "asc" }, include: { customer: { select: { code: true, name: true } }, lines: true } },
+      shippingOrders: { where: { status: { not: "CANCELLED" } }, orderBy: { number: "asc" }, include: { customer: { select: { code: true, name: true } }, items: true } },
       receivings: {
         where: { status: { not: "REPACKED" } },
         orderBy: { number: "asc" },
@@ -79,6 +80,29 @@ export default async function ShipmentPage({ params }: PageProps<"/shipments/[id
                     <td className={tdCls}>{fmtCbm(smp.cbm)}</td>
                     <td className={tdCls}>
                       <Badge value={smp.status} />
+                    </td>
+                  </tr>
+                ))}
+              </Table>
+            </Card>
+          )}
+          {s.shippingOrders.length > 0 && (
+            <Card title={`Shipping service (${s.shippingOrders.length})`}>
+              <Table head={["Order", "Customer", "Products", "Cartons", "Weight", "CBM", "Status"]}>
+                {s.shippingOrders.map((so) => (
+                  <tr key={so.id}>
+                    <td className={tdCls}>
+                      <A href={`/shipping-orders/${so.id}`}>{docNo("shippingOrder", so.number)}</A>
+                    </td>
+                    <td className={tdCls}>
+                      {so.customer.code} · {so.customer.name}
+                    </td>
+                    <td className={tdCls}>{so.items.map((i) => `${i.productName} × ${i.quantityReceived ?? i.quantity}`).join(", ")}</td>
+                    <td className={tdCls}>{so.cartonCount ?? 1}</td>
+                    <td className={tdCls}>{fmtKg(so.grossWeightKg)}</td>
+                    <td className={tdCls}>{fmtCbm(so.cbm)}</td>
+                    <td className={tdCls}>
+                      <Badge value={so.status} />
                     </td>
                   </tr>
                 ))}

@@ -2,14 +2,26 @@
 
 import { useState, useTransition } from "react";
 import { btnCls } from "@/components/ui";
+import type { ActionState } from "@/lib/action";
 import { invoiceSentAction } from "../actions";
 
 /**
  * Opens WhatsApp / email with the invoice message ready to send and logs it on
  * the sample. (No SMS/WhatsApp gateway yet – the message is sent from the
- * user's own WhatsApp/email; attach the saved PDF there.)
+ * user's own WhatsApp/email; attach the saved PDF there.) `action` logs it
+ * on another record type (e.g. a shipping order); defaults to the sample.
  */
-export function SendInvoice({ sampleId, whatsappUrl, mailtoUrl }: { sampleId: string; whatsappUrl: string; mailtoUrl: string | null }) {
+export function SendInvoice({
+  sampleId,
+  whatsappUrl,
+  mailtoUrl,
+  action = invoiceSentAction,
+}: {
+  sampleId: string;
+  whatsappUrl: string;
+  mailtoUrl: string | null;
+  action?: (prev: ActionState, fd: FormData) => Promise<ActionState>;
+}) {
   const [pending, start] = useTransition();
   const [done, setDone] = useState("");
 
@@ -19,7 +31,7 @@ export function SendInvoice({ sampleId, whatsappUrl, mailtoUrl }: { sampleId: st
       const fd = new FormData();
       fd.set("id", sampleId);
       fd.set("channel", channel);
-      const res = await invoiceSentAction({}, fd);
+      const res = await action({}, fd);
       setDone(res.error ?? `Logged as sent by ${channel === "WHATSAPP" ? "WhatsApp" : "email"}.`);
     });
   }

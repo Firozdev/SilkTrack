@@ -26,6 +26,8 @@ export const ACTIONS = [
   "notification:manage",
   "audit:view",
   "report:profit",
+  "dashboard:adminInbox", // "New Requests" panels on the dashboard
+  "agent:manage", // create agent logins, assign customers to agents
   "price:viewSelling", // BDT selling price, margin, profit (PURCHASE: selling only via User.canSetSellingPrice)
   "cost:viewChina", // RMB cost
 ] as const;
@@ -83,7 +85,19 @@ export function canSeeSelling(v: Viewer): boolean {
 /** Profit / margin and customer billing – never shown to PURCHASE. */
 export const PROFIT_FIELDS: ReadonlySet<string> = new Set(["marginBdt", "profitBdt", "invoices", "invoice", "payments"]);
 /** Customer selling price – shown to PURCHASE only with canSetSellingPrice. */
-export const SELLING_FIELDS: ReadonlySet<string> = new Set(["sellingPriceBdt", "grandTotalBdt"]);
+export const SELLING_FIELDS: ReadonlySet<string> = new Set([
+  "sellingPriceBdt",
+  "grandTotalBdt",
+  // Shipping-only service charges to the customer
+  "shipRatePerKgBdt",
+  "shipRatePerCbmBdt",
+  "shippingChargeBdt",
+  "qaFeeBdt",
+  "localDeliveryBdt",
+  "otherChargeBdt",
+  "discountBdt",
+  "invoiceTotalBdt",
+]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object") return false;
