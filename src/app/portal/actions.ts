@@ -20,6 +20,7 @@ import { cancelPortalShippingOrder, createPortalShippingOrder, updatePortalShipp
 import { UserError } from "@/lib/action";
 import { agentAddCustomer, customerForNew, placedBy, requireOwner } from "@/server/portal-access";
 import { markAllRead, markRead, setSound } from "@/server/notifications";
+import { createVersion, updateVersion } from "@/server/custom-invoices";
 import { DICTS, fill, translateError, type Dict, type Lang } from "./i18n";
 import { getLang, setLangCookie } from "./lang";
 
@@ -290,3 +291,32 @@ export async function portalSetSoundAction(on: boolean) {
   const acc = await requirePortalAccount();
   await setSound({ accountId: acc.id }, on === true);
 }
+
+// ───────── "Create my own version" of an invoice (private to this login) ─────────
+
+function versionInput(fd: FormData) {
+  try {
+    return JSON.parse(String(fd.get("data") ?? "{}"));
+  } catch {
+    throw new UserError("Check the form");
+  }
+}
+
+export const portalCreateVersionAction = portalAction(async (fd) => {
+  const acc = await requirePortalAccount();
+  const { shippingOrderId } = z.object({ shippingOrderId: z.string().min(1) }).parse(fields(fd));
+  const logo = fd.get("logo");
+  const v = await createVersion(acc, shippingOrderId, versionInput(fd), logo instanceof File ? logo : null);
+  revalidatePath(`/portal/shipping/${shippingOrderId}`);
+  redirect(`/portal/versions/${v.id}?saved=1`);
+});
+
+export const portalUpdateVersionAction = portalAction(async (fd, t) => {
+  const acc = await requirePortalAccount();
+  const { id, removeLogo } = z.object({ id: z.string().min(1), removeLogo: zStrOpt }).parse(fields(fd));
+  const logo = fd.get("logo");
+  const v = await updateVersion(acc, id, versionInput(fd), { logo: logo instanceof File ? logo : null, removeLogo: removeLogo === "yes" });
+  revalidatePath(`/portal/versions/${id}`);
+  revalidatePath(`/portal/shipping/${v.shippingOrderId}`);
+  return { ok: true, message: t.versionSaved };
+});

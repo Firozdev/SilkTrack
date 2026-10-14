@@ -61,7 +61,7 @@ export type StoredLogo = { key: string; mime: "image/png" | "image/jpeg" | "imag
  * content (not its name). SVGs with scripts or event handlers are refused; the
  * logo route also serves SVG with a sandboxing Content-Security-Policy.
  */
-export async function saveLogo(f: File): Promise<StoredLogo> {
+export async function saveLogo(f: File, opts: { allowSvg?: boolean } = {}): Promise<StoredLogo> {
   if (f.size === 0) throw new UserError("Choose a logo file");
   if (f.size > LOGO_MAX_BYTES) throw new UserError("The logo must be 2 MB or smaller");
   const buf = Buffer.from(await f.arrayBuffer());
@@ -74,7 +74,8 @@ export async function saveLogo(f: File): Promise<StoredLogo> {
   else if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) [mime, ext] = ["image/jpeg", ".jpg"];
   else {
     const text = buf.toString("utf8");
-    if (!/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text)) throw new UserError("The logo must be a PNG, JPG or SVG image");
+    if (!/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text)) throw new UserError(opts.allowSvg === false ? "The logo must be a PNG or JPG image" : "The logo must be a PNG, JPG or SVG image");
+    if (opts.allowSvg === false) throw new UserError("The logo must be a PNG or JPG image (SVG can't be used on PDFs)");
     if (/<script|javascript:|\son[a-z]+\s*=|<foreignObject/i.test(text)) throw new UserError("This SVG contains scripts and can't be used as a logo");
     [mime, ext] = ["image/svg+xml", ".svg"];
   }

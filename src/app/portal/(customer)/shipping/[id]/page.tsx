@@ -2,12 +2,14 @@ import { recordHistory } from "@/server/notifications";
 import { NotificationHistory } from "@/components/notification-history";
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
-import { Alert, Attachments, Card, Dl, Field, inputCls } from "@/components/ui";
+import { Alert, Attachments, Card, Dl, Field, btnCls, btnPrimaryCls, inputCls } from "@/components/ui";
 import { BD_TZ, fmtDateTime, fmtDay } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
 import { portalShipments, portalShippingOrder } from "@/server/portal";
 import { ShipmentBox } from "../../shipment-box";
+import { listVersions } from "@/server/custom-invoices";
+import Link from "next/link";
 import { ownerOf } from "@/server/portal-access";
 import { portalTrackingAction } from "../../../actions";
 import { fill } from "../../../i18n";
@@ -29,7 +31,7 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
   const cid = await ownerOf(acc, "shipping", id);
   const s = cid ? await portalShippingOrder(cid, id) : null;
   if (!cid || !s) notFound();
-  const [history, shipping] = await Promise.all([recordHistory({ shippingOrderId: s.id }, "customer"), portalShipments(cid, { shippingOrderId: s.id })]);
+  const [history, shipping, versions] = await Promise.all([recordHistory({ shippingOrderId: s.id }, "customer"), portalShipments(cid, { shippingOrderId: s.id }), listVersions(acc, s.id)]);
   const [due, rates] = await Promise.all([amountDue(cid, { kind: "shipping", id: s.id }), rateCardFor(s.shippingRateId)]);
   const air = s.shippingMethod === "AIR";
   const money = (label: string, v: { gt(n: number): boolean } | null, text: string): [string, string][] => (v?.gt(0) ? [[label, text]] : []);
@@ -142,6 +144,36 @@ export default async function PortalShippingPage({ params }: PageProps<"/portal/
                   [t.balanceDue, <b key="b" className={s.balance.gt(0) ? "text-red-700" : "text-green-700"}>{fmtBdt(s.balance)}</b>],
                 ]}
               />
+              {s.invoicedAt && (
+                <div className="mt-3 space-y-3 border-t border-gray-100 pt-3 text-sm">
+                  <a href={`/portal/documents/invoice/${s.id}`} className={btnPrimaryCls}>
+                    ⬇ {t.downloadInvoice}
+                  </a>
+                  <div>
+                    <div className="mb-1 font-medium text-gray-800">{t.myVersions}</div>
+                    <p className="mb-2 text-xs text-gray-500">{t.versionIntro}</p>
+                    {versions.length === 0 ? (
+                      <p className="text-xs text-gray-400">{t.noVersions}</p>
+                    ) : (
+                      <ul className="mb-2 space-y-1">
+                        {versions.map((v) => (
+                          <li key={v.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <Link href={`/portal/versions/${v.id}`} className="font-medium text-blue-700 hover:underline">
+                              {v.label}
+                            </Link>
+                            <a href={`/portal/versions/${v.id}/pdf`} className="text-xs text-blue-700 hover:underline">
+                              ⬇ PDF
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <Link href={`/portal/shipping/${s.id}/versions/new`} className={btnCls}>
+                      + {t.createVersion}
+                    </Link>
+                  </div>
+                </div>
+              )}
             </Card>
           )}
         </div>
