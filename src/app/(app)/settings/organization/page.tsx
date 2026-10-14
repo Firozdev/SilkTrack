@@ -12,6 +12,9 @@ export default async function OrganizationSettingsPage() {
   return (
     <Card title="Organization">
       <p className="mb-4 text-sm text-gray-500">Shown at the top of every quotation, invoice and payment receipt.</p>
+      {org.logo?.mime === "image/svg+xml" && (
+        <p className="mb-4 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Your logo is an SVG. Downloadable PDFs can only include PNG or JPG logos, so they show just the name – upload a PNG or JPG to see it on PDFs.</p>
+      )}
       <ActionForm action={saveOrganizationAction} submitLabel="Save organization details" className="max-w-3xl">
         <Field label="Logo">
           <LogoInput current={logoUrl} />

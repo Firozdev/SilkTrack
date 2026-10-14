@@ -18,6 +18,9 @@ import { Step, Waiting } from "../../samples/[id]/step";
 import { CustomerPanel } from "../../customer-panel";
 import { estimateShipping } from "@/lib/shipping-estimate";
 import { rateCardFor } from "@/server/shipping-rates";
+import { defaultInvoiceDueDate } from "@/server/shipping-orders";
+import { documentVersions, receiptNo } from "@/server/documents";
+import { toYmd } from "@/lib/dates";
 import {
   assignAction,
   cancelAction,
@@ -68,6 +71,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
   // PURCHASE never receives the customer charges or payments.
   const s = redactFor(user, raw);
   const showMoney = canSeeSelling(user);
+  const pdfs = showMoney && can(user.role, "invoice:view") && raw.invoicedAt ? await documentVersions("SHIPPING_INVOICE", { shippingOrderId: raw.id }) : null;
   const china = can(user.role, "receiving:edit");
   const bd = can(user.role, "request:edit");
   const hid = <input type="hidden" name="id" value={s.id} />;
@@ -328,7 +332,14 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
                     <Field label="Discount ৳">
                       <input name="discountBdt" inputMode="decimal" defaultValue={str(raw.discountBdt)} className={inputCls} />
                     </Field>
+                    <Field label="Due date">
+                      <input name="dueDate" type="date" defaultValue={toYmd(raw.invoiceDueDate ?? defaultInvoiceDueDate())} className={inputCls} />
+                    </Field>
                   </div>
+                  <Field label="Notes on the invoice" hint="Printed on the PDF">
+                    <textarea name="notes" rows={2} defaultValue={raw.invoiceNotes ?? ""} className={inputCls} />
+                  </Field>
+                  <p className="text-xs text-gray-500">Saving creates the invoice PDF; revising it makes a new version automatically.</p>
                 </ActionForm>
               ) : s.invoicedAt ? (
                 <p className="text-sm text-gray-600">{showMoney ? "Invoice details are on the right." : "Invoiced by the Bangladesh team."}</p>
@@ -460,8 +471,46 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
                   ["Balance due", <b key="d" className={balance.gt(0) ? "text-red-700" : "text-green-700"}>{raw.invoiceTotalBdt ? fmtBdt(balance.isNeg() ? 0 : balance) : "—"}</b>],
                   ["RMB rate (saved)", fmtRate(raw.rateUsed)],
                   ["Invoiced", raw.invoicedAt ? `${fmtDateTime(raw.invoicedAt, user.timezone)} · ${raw.invoicedBy?.name ?? ""}` : "—"],
+                  ["Due date", fmtDay(raw.invoiceDueDate)],
                 ]}
               />
+              {raw.invoicedAt && pdfs && (
+                <div className="mt-3 space-y-2 border-t border-gray-100 pt-3 text-sm">
+                  <a href={`/documents/shipping-invoice/${s.id}`} className="inline-block rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
+                    ⬇ Download invoice PDF
+                  </a>
+                  {pdfs.length > 1 && (
+                    <details>
+                      <summary className="cursor-pointer text-xs text-gray-500">Earlier versions ({pdfs.length - 1})</summary>
+                      <ul className="mt-1 space-y-0.5 text-xs">
+                        {pdfs.slice(1).map((d) => (
+                          <li key={d.id}>
+                            <a className="text-blue-700 hover:underline" href={`/documents/shipping-invoice/${s.id}?v=${d.id}`}>
+                              v{d.version}
+                            </a>{" "}
+                            · {fmtDateTime(d.createdAt, user.timezone)}
+                            {d.createdBy ? ` · ${d.createdBy.name}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  {raw.payments.filter((p) => p.type !== "REFUND").length > 0 && (
+                    <ul className="space-y-0.5 text-xs">
+                      {raw.payments
+                        .filter((p) => p.type !== "REFUND")
+                        .map((p) => (
+                          <li key={p.id}>
+                            {fmtDay(p.paidAt)} · {fmtBdt(p.amountBdt)} {humanize(p.method)} ·{" "}
+                            <a className="text-blue-700 hover:underline" href={`/documents/receipt/${p.id}`}>
+                              Receipt {receiptNo(p.number)} (PDF)
+                            </a>
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </Card>
           )}
           <Card title="Size">

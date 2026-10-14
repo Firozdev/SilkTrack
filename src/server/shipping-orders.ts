@@ -8,6 +8,7 @@ import { docNo } from "@/lib/format";
 import { diffFields, logChanges } from "@/lib/audit";
 import { queueCustomerMessage } from "@/lib/notify";
 import { notify, type About } from "./notify";
+import { generateReceipt, generateShippingInvoice, safely } from "./documents";
 import { portalShippingEditable } from "@/lib/editability";
 import { rateForConversion } from "./rates";
 import { liveRate, rateCardFor } from "./shipping-rates";
@@ -274,7 +275,14 @@ export type ShippingInvoiceInput = {
   localDeliveryBdt?: string;
   otherChargeBdt?: string;
   discountBdt?: string;
+  /** Printed on the PDF; defaults to 7 days after the invoice date. */
+  dueDate?: Date;
+  /** Printed on the PDF. */
+  notes?: string;
 };
+
+export const INVOICE_DUE_DAYS = 7;
+export const defaultInvoiceDueDate = (from = new Date()) => new Date(from.getTime() + INVOICE_DUE_DAYS * 86_400_000);
 
 /** Invoice amounts. Air bills on weight, sea on CBM. */
 export function shippingCharges(method: ShippingMethod, input: ShippingInvoiceInput & { billWeightKg: string; billCbm: string }) {
@@ -336,8 +344,11 @@ export async function invoiceShipping(actor: Actor, id: string, input: ShippingI
       rateUsed,
       invoicedById: actor.id,
       invoicedAt: new Date(),
+      invoiceDueDate: input.dueDate ?? defaultInvoiceDueDate(),
+      invoiceNotes: input.notes?.trim() || null,
     });
   });
+  await safely("shipping invoice", () => generateShippingInvoice(id, actor.id));
   const about = { shipping: s, customerId: s.customerId };
   await notify("INVOICE_READY", about, { total: invoiceTotalBdt.toFixed(2) }, { userId: actor.id });
   if (to === "READY_FOR_DELIVERY" && s.status !== "READY_FOR_DELIVERY") await notify("READY_FOR_DELIVERY", about, {}, { userId: actor.id });
@@ -362,6 +373,8 @@ export async function recordShippingPayment(actor: Actor, id: string, input: { a
     else await tx.shippingOrderEvent.create({ data: { shippingOrderId: id, message: msg, createdById: actor.id } });
     return p;
   });
+  await safely("receipt", () => generateReceipt(payment.id, actor.id));
+  await safely("shipping invoice", () => generateShippingInvoice(id, actor.id)); // amount paid / balance changed
   const about = { shipping: s, customerId: s.customerId };
   await notify("PAYMENT_CONFIRMED", about, { amount: amount.toFixed(2), method: input.method.replace(/_/g, " ").toLowerCase(), kind: "shipping" }, { userId: actor.id });
   if (settled) await notify("READY_FOR_DELIVERY", about, {}, { userId: actor.id });

@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { formAction } from "@/lib/action";
-import { fields, files, rows, zBool, zDec, zDecOpt, zIntMin0, zStrOpt } from "@/lib/forms";
+import { fields, files, rows, zBool, zDec, zDecOpt, zIntMin0, zStrOpt, zYmdOpt } from "@/lib/forms";
+import { dayFromYmd } from "@/lib/dates";
 import { requireUser } from "@/lib/session";
 import { saveAttachments } from "@/lib/uploads";
 import { saveItemFiles } from "@/server/line-files";
@@ -109,9 +110,9 @@ export const receiveBdAction = step((u, id) => receiveShippingBd(u, id), "Marked
 
 export const invoiceAction = step(async (u, id, fd) => {
   const i = z
-    .object({ ratePerUnitBdt: zDec, billWeightKg: zDecOpt, billCbm: zDecOpt, qaFeeBdt: zDecOpt, localDeliveryBdt: zDecOpt, otherChargeBdt: zDecOpt, discountBdt: zDecOpt })
+    .object({ ratePerUnitBdt: zDec, billWeightKg: zDecOpt, billCbm: zDecOpt, qaFeeBdt: zDecOpt, localDeliveryBdt: zDecOpt, otherChargeBdt: zDecOpt, discountBdt: zDecOpt, dueDate: zYmdOpt, notes: zStrOpt })
     .parse(fields(fd));
-  await invoiceShipping(u, id, i);
+  await invoiceShipping(u, id, { ...i, dueDate: i.dueDate ? dayFromYmd(i.dueDate) : undefined });
 }, "Invoice saved.");
 
 export const paymentAction = step(async (u, id, fd) => {

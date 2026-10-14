@@ -20,7 +20,7 @@ import { makeUser, resetDb } from "../helpers";
 let admin: Actor, cs: Actor;
 
 const ORG = { name: "SilkTrack Ltd", tagline: "China to your door", phone: "01700000000", email: "hello@silktrack.test", website: "www.silktrack.test", address: "House 1, Road 2\nDhaka" };
-const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a0e2bd2b0000000049454e44ae426082", "hex");
+const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452000000040000000208060000007fa87d630000001249444154789c63907358ff1f1933a00b00000a491061fb654d210000000049454e44ae426082", "hex");
 const file = (data: Buffer | string, name: string, type: string) => new File([typeof data === "string" ? data : new Uint8Array(data)], name, { type });
 const bank: PaymentAccountInput = { type: "BANK", providerName: "Dutch-Bangla Bank", accountName: "SilkTrack Ltd", accountNumber: "1234567890", branch: "Gulshan", routingNumber: "090261726", showOnPdf: true };
 
@@ -58,6 +58,7 @@ describe("Settings – organization and payment information", () => {
     await expect(saveOrganization(admin, ORG, { logo: file('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', "x.svg", "image/svg+xml") })).rejects.toThrow(/scripts/);
     await expect(saveOrganization(admin, ORG, { logo: file('<svg onload="alert(1)"></svg>', "x.svg", "image/svg+xml") })).rejects.toThrow(/scripts/);
     await expect(saveOrganization(admin, ORG, { logo: file("hello", "logo.png", "image/png") })).rejects.toThrow(/PNG, JPG or SVG/); // named .png, isn't one
+    await expect(saveOrganization(admin, ORG, { logo: file(Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a0e2bd2b0000000049454e44ae426082", "hex"), "broken.png", "image/png") })).rejects.toThrow(/damaged/);
     await expect(saveOrganization(admin, ORG, { logo: file(Buffer.concat([PNG, Buffer.alloc(2 * 1024 * 1024)]), "big.png", "image/png") })).rejects.toThrow(/2 MB/);
     expect((await getOrganization()).logo?.key).toBe(replaced.logo!.key); // failed uploads change nothing
 

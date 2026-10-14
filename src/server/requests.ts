@@ -9,6 +9,7 @@ import { docNo } from "@/lib/format";
 import { logChanges } from "@/lib/audit";
 import { getSetting } from "@/lib/settings";
 import { notify } from "./notify";
+import { generateReceipt, safely } from "./documents";
 import { portalRequestEditable } from "@/lib/editability";
 import { deriveOrderStatus, setLineStatus, setOrderStatus } from "./status";
 import type { Actor } from "./actor";
@@ -309,6 +310,7 @@ export async function recordPayment(actor: Actor, orderId: string, input: Paymen
     await notifyPurchaseReleased(order);
   }
   if (input.type !== "REFUND") {
+    await safely("receipt", () => generateReceipt(payment.id, actor.id));
     await notify("PAYMENT_CONFIRMED", { order, customerId: order.customerId }, { amount: D(input.amountBdt).toFixed(2), method: input.method.replace(/_/g, " ").toLowerCase(), kind: input.type.toLowerCase() }, { userId: actor.id });
   }
   return payment;
