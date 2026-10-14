@@ -1009,6 +1009,8 @@ model ShippingOrder {
 
   generatedDocuments GeneratedDocument[]
 
+  customInvoices CustomInvoice[]
+
   @@index([status])
   @@index([customerId])
   @@index([shipmentId])
@@ -1500,6 +1502,8 @@ model PortalAccount {
   placedShipping     ShippingOrder[]     @relation("ShippingOrderPlacedBy")
   notifications      Notification[]
 
+  customInvoices CustomInvoice[]
+
   @@index([status])
   @@index([customerId])
 }
@@ -1719,4 +1723,28 @@ model GeneratedDocument {
   @@index([paymentId])
   @@index([estimateId])
   @@index([invoiceId])
+}
+
+// ───────────────────────── Customer's own invoice versions ─────────────────────────
+
+/// A customer's (or agent's) own copy of one of our invoices, to give to THEIR customer.
+/// Never written back into our invoice or records; private to the login that made it.
+model CustomInvoice {
+  id              String        @id @default(cuid())
+  accountId       String
+  account         PortalAccount @relation(fields: [accountId], references: [id])
+  /// The invoice it was copied from (read-only source).
+  shippingOrderId String
+  shippingOrder   ShippingOrder @relation(fields: [shippingOrderId], references: [id])
+  /// e.g. "For Rahim Traders"
+  label           String
+  /// Business, bill-to, items, charges, discount, paid, notes, payment accounts (see src/lib/custom-invoice.ts).
+  data            Json
+  /// Their own logo (PNG / JPG).
+  logoKey         String?
+  logoMime        String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([accountId, shippingOrderId])
 }

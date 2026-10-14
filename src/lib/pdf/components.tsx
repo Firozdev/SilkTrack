@@ -152,7 +152,7 @@ export function Totals({ rows }: { rows: TotalRow[] }) {
   );
 }
 
-export type Account = { id: string; type: "BANK" | "MOBILE_BANKING" | "OTHER"; providerName: string; accountName: string; accountNumber: string; branch: string | null; routingNumber: string | null; notes: string | null };
+export type Account = { id: string; /** null: no type label (customer-made versions). */ type: "BANK" | "MOBILE_BANKING" | "OTHER" | null; providerName: string; accountName: string; accountNumber: string; branch: string | null; routingNumber: string | null; notes: string | null };
 const TYPE = { BANK: "Bank", MOBILE_BANKING: "Mobile banking", OTHER: "Other" } as const;
 
 /** Accounts marked "Show on PDFs" (in Admin's order); nothing when there are none. */
@@ -165,7 +165,7 @@ export function PaymentBox({ accounts, reference }: { accounts: Account[]; refer
         {accounts.map((a) => (
           <View key={a.id} style={{ width: "50%", paddingRight: 8, marginTop: 4 }}>
             <Text style={s.bold}>
-              {a.providerName} <Text style={[s.muted, { fontFamily: "Helvetica" }]}>({TYPE[a.type]})</Text>
+              {a.providerName} {a.type ? <Text style={[s.muted, { fontFamily: "Helvetica" }]}>({TYPE[a.type]})</Text> : null}
             </Text>
             <Text>Account name: {a.accountName}</Text>
             <Text>Account no.: {a.accountNumber}</Text>

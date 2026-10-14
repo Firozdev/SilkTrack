@@ -36,6 +36,9 @@ function render(element: ReactElement) {
   ]);
 }
 
+/** For on-the-fly PDFs (customer versions), with the same timeout. */
+export const renderPdf = render;
+
 /** Render with the logo; if the logo breaks rendering (damaged file), render again without it. */
 async function renderWithFallback(make: (b: Brand) => ReactElement) {
   const b = await brand();

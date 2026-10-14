@@ -111,6 +111,28 @@ async function main() {
     },
   });
   await prisma.payment.create({ data: { shippingOrderId: invoiced.id, type: "SHIPPING_SERVICE", amountBdt: "2000.00", method: "BKASH", reference: "DEMO-TRX-1", receivedById: admin.id, paidAt: new Date() } });
+  // The demo customer's own resale version of that invoice (portal → order → My versions).
+  await prisma.customInvoice.create({
+    data: {
+      accountId: account.id,
+      shippingOrderId: invoiced.id,
+      label: "For Rahim Traders",
+      data: {
+        label: "For Rahim Traders",
+        business: { name: "Demo Portal Customer Ltd", phone: PORTAL_PHONE, email: "sales@demo-customer.test", address: "Shop 4, Mirpur 10, Dhaka" },
+        invoiceNo: "DPC-001",
+        invoiceDate: new Date().toISOString().slice(0, 10),
+        dueDate: "",
+        billTo: { name: "Rahim Traders", phone: "01811000000", address: "Uttara, Dhaka" },
+        items: [{ description: "Winter jackets, imported", qty: "4", unitPrice: "1800" }],
+        charges: [{ label: "Delivery", amount: "150" }],
+        discount: "0",
+        paid: "0",
+        notes: "Thank you for your business.",
+        accounts: [{ provider: "bKash", accountName: "Demo Portal Customer", accountNumber: PORTAL_PHONE, notes: "" }],
+      },
+    },
+  });
 
   // Demo staff for the CS and China roles, then a few unread notifications for every role,
   // built from the same rules and templates the app uses.
