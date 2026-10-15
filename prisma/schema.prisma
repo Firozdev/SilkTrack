@@ -26,7 +26,11 @@ datasource db {
 enum Role {
   ADMIN
   CS
+  /// "China team"
   PURCHASE
+  /// Bangladesh warehouse: receives goods from the air / sea port or hand carry,
+  /// updates the status and dispatches to the local courier.
+  BD_WAREHOUSE
 }
 
 enum Locale {

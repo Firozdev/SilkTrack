@@ -11,7 +11,7 @@ import { can, canSeeSelling } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
 import { getOrderView } from "@/server/order-view";
 import { paymentSteps } from "@/lib/payment-timeline";
-import { BD_STAGES, STAGE_LABEL, isBdStage, nextStage, previousStage } from "@/lib/order-stages";
+import { BD_STAGES, STAGE_LABEL, isBdStage, nextStage, previousStage, stagePermission } from "@/lib/order-stages";
 import { balanceDue } from "@/server/order-stages";
 import { PaidRmb } from "../../purchasing/paid-rmb";
 import { prisma } from "@/lib/prisma";
@@ -50,9 +50,11 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
   const advance = sum(payments.filter((p) => p.type === "ADVANCE").map((p) => p.amountBdt));
   const hidden = <input type="hidden" name="orderId" value={order.id} />;
   // Bangladesh stages (Admin): next step, step back with a reason.
-  const canStage = can(user.role, "bdReceiving:edit");
-  const next = canStage ? nextStage(order.status) : null;
-  const back = canStage ? previousStage(order.status) : null;
+  // Warehouse steps: BD Warehouse / Admin; money steps and moving back: Admin.
+  const nextAny = nextStage(order.status);
+  const next = nextAny && can(user.role, stagePermission(nextAny)) ? nextAny : null;
+  const back = can(user.role, "stage:moveBack") ? previousStage(order.status) : null;
+  const waitingForAdmin = nextAny && !next && can(user.role, "bdReceiving:edit") ? nextAny : null;
   const dueBeforeCollect = next === "PAYMENT_COLLECTED" ? await balanceDue(order.id) : null;
 
   return (
@@ -352,7 +354,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
             )}
           </Card>
 
-          {(next || back) && (
+          {(next || back || waitingForAdmin) && (
             <Card title="Bangladesh stages">
               <ol className="mb-3 space-y-0.5 text-sm">
                 {BD_STAGES.map((st, i) => {
@@ -372,6 +374,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
                   {next === "READY_FOR_DELIVERY" && <p className="text-xs text-gray-500">Allowed: customer payment is collected.</p>}
                 </ActionForm>
               )}
+              {waitingForAdmin && <p className="text-sm text-gray-500">Next: {STAGE_LABEL[waitingForAdmin]} – done by Admin.</p>}
               {back && (
                 <details className="mt-3">
                   <summary className="cursor-pointer text-sm text-gray-600">Move back to {STAGE_LABEL[back as keyof typeof STAGE_LABEL]}…</summary>
@@ -488,7 +491,8 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
 function Timeline({ order, tz }: { order: NonNullable<Awaited<ReturnType<typeof getOrderView>>>; tz: string }) {
   const events = [
     ...order.lines.flatMap((l) => l.trackingEvents.map((e) => ({ kind: "tracking" as const, ...e, line: l }))),
-    ...paymentSteps(order.payments, order.paymentSubmissions).map((p) => ({ kind: "payment" as const, ...p, occurredAt: p.at })),
+    // Billing is hidden from roles that don't see it (China team, BD warehouse): no payment steps for them.
+    ...("payments" in order && order.payments ? paymentSteps(order.payments, order.paymentSubmissions ?? []) : []).map((p) => ({ kind: "payment" as const, ...p, occurredAt: p.at })),
   ].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
   if (!events.length) return <p className="text-sm text-gray-400">No events yet.</p>;
   return (

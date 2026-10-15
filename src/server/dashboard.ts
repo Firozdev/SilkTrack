@@ -47,6 +47,30 @@ export async function bdDashboard() {
   return { withChina, sampling, quotationsToReview, quoted, upfrontRequested, priceApprovals, openIssues, balanceToCollect: balance, invoicesOpen: invoiced.size };
 }
 
+/** BD warehouse view: what is coming, what is in Bangladesh, what is waiting to go out. */
+export async function warehouseDashboard() {
+  const [onTheWay, arrived, orders, shipping] = await Promise.all([
+    prisma.shipment.count({ where: { status: { in: ["DEPARTED", "IN_TRANSIT"] } } }),
+    prisma.shipment.count({ where: { status: { in: ["ARRIVED_BD", "CUSTOMS_CLEARED"] } } }),
+    prisma.order.groupBy({ by: ["status"], _count: { _all: true }, where: { status: { in: ["IN_TRANSIT", "ARRIVED_BD", "CUSTOMS_CLEARED", "READY_FOR_DELIVERY", "OUT_FOR_DELIVERY"] } } }),
+    prisma.shippingOrder.groupBy({ by: ["status"], _count: { _all: true }, where: { status: { in: ["IN_SHIPMENT", "RECEIVED_BD", "READY_FOR_DELIVERY", "OUT_FOR_DELIVERY"] } } }),
+  ]);
+  const o = new Map(orders.map((r) => [r.status, r._count._all]));
+  const s = new Map(shipping.map((r) => [r.status, r._count._all]));
+  return {
+    onTheWay,
+    arrived,
+    ordersInTransit: o.get("IN_TRANSIT") ?? 0,
+    ordersReceived: o.get("ARRIVED_BD") ?? 0,
+    ordersCustoms: o.get("CUSTOMS_CLEARED") ?? 0,
+    ordersReady: o.get("READY_FOR_DELIVERY") ?? 0,
+    ordersOut: o.get("OUT_FOR_DELIVERY") ?? 0,
+    shippingToReceive: s.get("IN_SHIPMENT") ?? 0,
+    shippingReady: s.get("READY_FOR_DELIVERY") ?? 0,
+    shippingOut: s.get("OUT_FOR_DELIVERY") ?? 0,
+  };
+}
+
 /** China (purchase team) view. */
 export async function chinaDashboard(now = new Date()) {
   const day = today(CN_TZ, now);

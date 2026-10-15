@@ -21,8 +21,9 @@ export const ACTIONS = [
   "payment:record",
   "invoice:view",
   "invoice:edit",
-  "bdReceiving:edit",
-  "delivery:edit",
+  "bdReceiving:edit", // Bangladesh receiving: shipment arrival / customs, Bangladesh stages of orders
+  "delivery:edit", // dispatch to the local courier and delivery
+  "stage:moveBack", // move an order's Bangladesh stage back one step (with a reason)
   "notification:manage",
   "audit:view",
   "report:profit",
@@ -54,6 +55,9 @@ const ROLE_ACTIONS: Record<Role, ReadonlySet<Action>> = {
     "tracking:edit",
     "cost:viewChina",
   ]),
+  // Receives goods in Bangladesh (air / sea port, hand carry), updates the status and
+  // dispatches to the local courier. No prices, costs, money steps or settings.
+  BD_WAREHOUSE: new Set<Action>(["bdReceiving:edit", "delivery:edit"]),
 };
 
 export function can(role: Role, action: Action): boolean {
@@ -99,6 +103,36 @@ export const SELLING_FIELDS: ReadonlySet<string> = new Set([
   "invoiceTotalBdt",
 ]);
 
+/** China purchase costs (RMB, and their BDT cost) – hidden from roles without "cost:viewChina" (the BD warehouse). */
+export const COST_FIELDS: ReadonlySet<string> = new Set([
+  "unitPriceRmb",
+  "quotedUnitPriceRmb",
+  "productTotalRmb",
+  "domesticShippingShareRmb",
+  "serviceChargeShareRmb",
+  "totalRmb",
+  "lineTotalRmb",
+  "rmbSubtotal",
+  "domesticShippingRmb",
+  "serviceChargeRmb",
+  "packingRmb",
+  "inspectionRmb",
+  "serviceFeeRmb",
+  "shippingRmb",
+  "shippingRatePerKgRmb",
+  "shippingRatePerCbmRmb",
+  "productCostBdt",
+  "priceChangePct",
+  "paidRmb",
+  "paidBdt",
+  "totalBdt",
+  "rateUsed",
+  "freightCost",
+  "freightCostBdt",
+  "freightShareBdt",
+  "paymentSubmissions",
+]);
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object") return false;
   const proto = Object.getPrototypeOf(value);
@@ -125,7 +159,8 @@ function strip(value: unknown, hidden: (key: string) => boolean): unknown {
 export function redactFor<T>(viewer: Viewer, data: T): T {
   if (can(viewer.role, "price:viewSelling")) return data;
   const selling = canSeeSelling(viewer);
-  return strip(data, (k) => PROFIT_FIELDS.has(k) || (!selling && SELLING_FIELDS.has(k))) as T;
+  const costs = can(viewer.role, "cost:viewChina");
+  return strip(data, (k) => PROFIT_FIELDS.has(k) || (!selling && SELLING_FIELDS.has(k)) || (!costs && COST_FIELDS.has(k))) as T;
 }
 
 /** Role-only variant (no per-user permission). */

@@ -42,3 +42,7 @@ export function paymentGateBlocks(from: OrderStatus, to: BdStage) {
   const reached = isBdStage(from) ? BD_STAGES.indexOf(from) : -1;
   return BD_STAGES.indexOf(to) >= gate && reached < BD_STAGES.indexOf("PAYMENT_COLLECTED");
 }
+
+/** Money steps are Admin's; the warehouse steps are also BD Warehouse's. */
+export const MONEY_STAGES: readonly BdStage[] = ["INVOICE_SHARED", "PAYMENT_COLLECTED"];
+export const stagePermission = (to: BdStage) => (MONEY_STAGES.includes(to) ? "invoice:edit" : "bdReceiving:edit") as "invoice:edit" | "bdReceiving:edit";

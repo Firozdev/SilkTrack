@@ -1,10 +1,10 @@
 import "server-only";
 import type { OrderStatus } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { assertCan } from "@/lib/permissions";
+import { ForbiddenError, assertCan, can } from "@/lib/permissions";
 import { UserError } from "@/lib/action";
 import { docNo } from "@/lib/format";
-import { BD_STAGES, STAGE_LABEL, isBdStage, nextStage, paymentGateBlocks, previousStage, type BdStage } from "@/lib/order-stages";
+import { BD_STAGES, STAGE_LABEL, isBdStage, nextStage, paymentGateBlocks, previousStage, stagePermission, type BdStage } from "@/lib/order-stages";
 import type { EventType } from "@/lib/notifications/rules";
 import { notify } from "./notify";
 import { amountDue } from "./payment-submissions";
@@ -54,12 +54,13 @@ async function tellCustomer(actor: Actor, o: Ord, to: BdStage) {
 
 /** "Move to next status" on the order page. */
 export async function advanceOrder(actor: Actor, orderId: string, expected?: OrderStatus) {
-  assertCan(actor.role, "bdReceiving:edit");
+  if (!can(actor.role, "bdReceiving:edit") && !can(actor.role, "invoice:edit")) throw new ForbiddenError("bdReceiving:edit");
   const o = await loadOrder(orderId);
   if (expected && o.status !== expected) throw new UserError(`${docNo("order", o.number)} is now ${STAGE_LABEL[o.status as BdStage] ?? o.status.toLowerCase()} – refresh the page`);
   const to = nextStage(o.status);
   if (!to) throw new UserError(o.status === "DELIVERED" ? "Already delivered" : "Only orders in a shipment can move to the Bangladesh stages");
   if (paymentGateBlocks(o.status, to)) throw new UserError("Mark “Customer payment collected” first – Ready for home delivery comes after it");
+  if (!can(actor.role, stagePermission(to))) throw new UserError(`“${STAGE_LABEL[to]}” is done by Admin`);
   await move(actor, o, to, STAGE_LABEL[to]);
   await tellCustomer(actor, o, to);
   return to;
@@ -67,7 +68,7 @@ export async function advanceOrder(actor: Actor, orderId: string, expected?: Ord
 
 /** "Move back one step" – Admin only, with a reason (audit log + staff timeline). */
 export async function moveOrderBack(actor: Actor, orderId: string, reason: string) {
-  assertCan(actor.role, "bdReceiving:edit");
+  assertCan(actor.role, "stage:moveBack");
   const why = reason.trim();
   if (why.length < 3) throw new UserError("Give a reason for moving back");
   const o = await loadOrder(orderId);
@@ -81,8 +82,8 @@ export type BulkResult = { moved: string[]; skipped: { ref: string; why: string 
 
 /** Shipment page: move every order in the shipment forward to one status. */
 export async function bulkMoveShipmentOrders(actor: Actor, shipmentId: string, target: BdStage): Promise<BulkResult> {
-  assertCan(actor.role, "bdReceiving:edit");
   if (!isBdStage(target)) throw new UserError("Choose a status");
+  assertCan(actor.role, stagePermission(target));
   const shipment = await prisma.shipment.findUnique({ where: { id: shipmentId }, select: { id: true, code: true } });
   if (!shipment) throw new UserError("Shipment not found");
   const orders = await prisma.order.findMany({

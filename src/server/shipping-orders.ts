@@ -237,7 +237,8 @@ export async function assignShippingOrder(actor: Actor, id: string, shipmentId: 
 // ───────────────────────── Bangladesh ─────────────────────────
 
 export async function receiveShippingBd(actor: Actor, id: string) {
-  assertCan(actor.role, "request:edit");
+  // CS (as before) or the BD warehouse.
+  if (!can(actor.role, "bdReceiving:edit")) assertCan(actor.role, "request:edit");
   const s = await load(id);
   requireStatus(s, ["IN_SHIPMENT"], "The order is not in a shipment yet");
   await prisma.$transaction((tx) => move(tx, s, "RECEIVED_BD", actor.id, `Received in Bangladesh${s.shipment ? ` (${s.shipment.code})` : ""}`, { receivedBdAt: new Date() }));
@@ -380,7 +381,8 @@ export async function recordShippingPayment(actor: Actor, id: string, input: { a
 }
 
 export async function dispatchShipping(actor: Actor, id: string, input: { courier: DeliveryCourier; trackingNo?: string }) {
-  assertCan(actor.role, "request:edit");
+  // CS (as before) or the BD warehouse.
+  if (!can(actor.role, "delivery:edit")) assertCan(actor.role, "request:edit");
   const s = await load(id);
   requireStatus(s, ["READY_FOR_DELIVERY"], "The order must be fully paid before delivery");
   const how = [input.courier.replace(/_/g, " ").toLowerCase(), input.trackingNo].filter(Boolean).join(" · ");
@@ -392,7 +394,8 @@ export async function dispatchShipping(actor: Actor, id: string, input: { courie
 }
 
 export async function deliverShipping(actor: Actor, id: string, receiverName?: string) {
-  assertCan(actor.role, "request:edit");
+  // CS (as before) or the BD warehouse.
+  if (!can(actor.role, "delivery:edit")) assertCan(actor.role, "request:edit");
   const s = await load(id);
   requireStatus(s, ["OUT_FOR_DELIVERY"], "Dispatch the order first");
   await prisma.$transaction((tx) => move(tx, s, "DELIVERED", actor.id, `Delivered${receiverName ? ` – received by ${receiverName}` : ""}`, { deliveredAt: new Date(), receiverName: receiverName ?? null }));

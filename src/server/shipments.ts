@@ -256,13 +256,17 @@ const STATUS_MESSAGE: Partial<Record<ShipmentStatus, string>> = {
  * matching status and a timeline entry. Closing auto-creates next week's.
  */
 export async function setShipmentStatus(actor: Actor, id: string, status: ShipmentStatus, now = new Date()) {
-  assertCan(actor.role, "shipment:edit");
+  const to = SHIPMENT_FLOW.indexOf(status);
+  // China team loads and sends shipments; arrival in Bangladesh onwards is the BD warehouse's (and Admin's).
+  if (to < SHIPMENT_FLOW.indexOf("ARRIVED_BD")) assertCan(actor.role, "shipment:edit");
+  else if (!can(actor.role, "bdReceiving:edit")) {
+    assertCan(actor.role, "shipment:edit");
+    throw new UserError("Only Admin or BD Warehouse can mark arrival in Bangladesh");
+  }
   const s = await prisma.shipment.findUniqueOrThrow({ where: { id } });
   const from = SHIPMENT_FLOW.indexOf(s.status);
-  const to = SHIPMENT_FLOW.indexOf(status);
   if (to <= from) throw new UserError("Shipment status can only move forward");
   if (to >= SHIPMENT_FLOW.indexOf("DEPARTED") && s.itemCount === 0) throw new UserError("This shipment has no items");
-  if (to >= SHIPMENT_FLOW.indexOf("ARRIVED_BD") && !can(actor.role, "bdReceiving:edit")) throw new UserError("Only Admin can mark arrival in Bangladesh");
 
   const stamp: Prisma.ShipmentUpdateInput = { status };
   if (to >= SHIPMENT_FLOW.indexOf("DEPARTED") && !s.departedAt) stamp.departedAt = now;
