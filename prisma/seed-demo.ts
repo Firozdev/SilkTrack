@@ -253,7 +253,45 @@ async function main() {
   console.log(`China login: china.demo@silktrack.test / ${STAFF_PASSWORD}`);
   console.log(`Admin login: admin.demo@silktrack.test / ${STAFF_PASSWORD} (local demo only)`);
   console.log("Every role now has a few unread demo notifications.");
-  console.log(`Demo customer's ${"SHO-" + String(shipPortal.number).padStart(6, "0")} is in shipment ${shipment.code}; their Buy for Me requests are not in a shipment yet.`);
+  // A Buy for Me order in this week's Air shipment: move it through the Bangladesh stages
+  // (order page → "Bangladesh stages", or the shipment page → "Orders: Bangladesh stages").
+  const inShipment = await prisma.order.create({
+    data: {
+      customerId: portalCustomer.id,
+      source: "PORTAL",
+      requestStatus: "CUSTOMER_APPROVED",
+      status: "IN_SHIPMENT",
+      shippingMethod: "AIR",
+      lines: {
+        create: [
+          {
+            lineNo: 1,
+            productName: "Table fan – in shipment (demo)",
+            quantity: 2,
+            status: "IN_SHIPMENT",
+            trackingEvents: { create: { leg: "CHINA_TO_BD", status: "IN_SHIPMENT", message: `Added to shipment ${shipment.code}`, shipmentId: shipment.id } },
+          },
+        ],
+      },
+    },
+    include: { lines: true },
+  });
+  await prisma.payment.create({ data: { orderId: inShipment.id, type: "ADVANCE", amountBdt: "1500.00", method: "BKASH", receivedById: admin.id, paidAt: new Date() } });
+  await prisma.receiving.create({
+    data: {
+      receivedAt: new Date(),
+      receivedById: admin.id,
+      grossWeightKg: "3.2",
+      cbm: "0.0400",
+      shippingMethod: "AIR",
+      status: "IN_SHIPMENT",
+      shipmentId: shipment.id,
+      lines: { create: [{ orderLineId: inShipment.lines[0].id, quantityOrdered: 2, quantityReceived: 2 }] },
+    },
+  });
+  await prisma.shipment.update({ where: { id: shipment.id }, data: { itemCount: { increment: 1 } } });
+
+  console.log(`Demo customer's ${"SHO-" + String(shipPortal.number).padStart(6, "0")} and REQ-${String(inShipment.number).padStart(6, "0")} (Table fan) are in shipment ${shipment.code}.`);
   console.log(`Invoiced demo order SHO-${String(invoiced.number).padStart(6, "0")}: download its invoice / receipt PDFs from the staff app.`);
 }
 

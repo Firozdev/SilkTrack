@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError } from "@/lib/permissions";
+import { CN_TZ, addDays, isoWeek, isoWeekStart, today } from "@/lib/dates";
 import { createRequest, recordPayment } from "@/server/requests";
 import { createPurchase, markShippedBySupplier } from "@/server/purchasing";
 import { findByTracking, receiveParcel, repack } from "@/server/receiving";
@@ -124,14 +125,17 @@ describe("China receiving + weekly shipments", () => {
       { supplierOrderId: so.id, condition: "OK", grossWeightKg: "2", cartons: [carton], shippingMethod: "AIR", shipmentId: "auto", lines: pls.map((p) => ({ purchaseLineId: p.id, quantityReceived: p.quantity, condition: "OK" as const })) },
       NOW,
     );
-    const w41 = await createShipment(admin, { method: "AIR", cutoffDate: new Date("2026-10-10T00:00:00Z"), maxWeightKg: "1" });
+    // A week whose cut-off is still ahead (moving uses today's date).
+    const wk = isoWeek(addDays(today(CN_TZ), 21));
+    const w41 = await createShipment(admin, { method: "AIR", cutoffDate: addDays(isoWeekStart(wk.year, wk.week), 5), maxWeightKg: "1" });
+    const after = isoWeek(addDays(isoWeekStart(wk.year, wk.week), 7));
     const warning = await moveReceiving(china, r.receiving.id, w41.id);
     expect(warning).toMatch(/over capacity/);
     expect((await prisma.shipment.findUniqueOrThrow({ where: { id: r.shipment!.id } })).itemCount).toBe(0);
 
     await setShipmentStatus(china, w41.id, "CLOSED");
     // next week auto-created and open
-    expect((await prisma.shipment.findUniqueOrThrow({ where: { code: "SHP-2026-W42-A" } })).status).toBe("OPEN");
+    expect((await prisma.shipment.findUniqueOrThrow({ where: { code: shipmentCode(after.year, after.week, "AIR") } })).status).toBe("OPEN");
     await expect(removeFromShipment(china, r.receiving.id)).rejects.toThrow(/closed/);
 
     await setShipmentStatus(china, w41.id, "DEPARTED");
@@ -142,6 +146,10 @@ describe("China receiving + weekly shipments", () => {
     lines = await prisma.orderLine.findMany({ where: { orderId: order.id } });
     expect(lines.every((l) => l.status === "ARRIVED_BD")).toBe(true);
     expect(await prisma.notification.count({ where: { channel: "WHATSAPP", type: "ARRIVED_BD" } })).toBe(1);
+    // Customs cleared on the shipment → every order line is at Customs clearance
+    await setShipmentStatus(admin, w41.id, "CUSTOMS_CLEARED");
+    lines = await prisma.orderLine.findMany({ where: { orderId: order.id } });
+    expect(lines.every((l) => l.status === "CUSTOMS_CLEARED")).toBe(true);
     await expect(setShipmentStatus(admin, w41.id, "OPEN")).rejects.toThrow(/forward/);
   });
 

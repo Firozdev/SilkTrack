@@ -7,6 +7,8 @@ import { formAction } from "@/lib/action";
 import { fields, files, rows, zBool, zDec, zDecOpt, zIntMin0, zIntPos, zStrOpt } from "@/lib/forms";
 import { splitLinks } from "@/lib/links";
 import { recordOrderQa } from "@/server/order-qa";
+import { advanceOrder, moveOrderBack } from "@/server/order-stages";
+import type { OrderStatus } from "@/generated/prisma/client";
 import { requireUser } from "@/lib/session";
 import { saveAttachments, saveLineFiles } from "@/lib/uploads";
 import {
@@ -86,6 +88,16 @@ export const qaAction = simple(async (u, id, fd) => {
   const q = z.object({ result: z.enum(["PASSED", "FAILED"]), notes: zStrOpt }).parse(fields(fd));
   await recordOrderQa(u, id, q, files(fd, "photos"));
 }, "QA result saved.");
+
+/** Admin: Bangladesh stages – next step, or one step back with a reason. */
+export const advanceStageAction = simple(async (u, id, fd) => {
+  const { expected } = z.object({ expected: z.string().optional() }).parse(fields(fd));
+  await advanceOrder(u, id, expected as OrderStatus | undefined);
+}, "Status updated.");
+export const stageBackAction = simple(async (u, id, fd) => {
+  const { reason } = z.object({ reason: z.string().default("") }).parse(fields(fd));
+  await moveOrderBack(u, id, reason);
+}, "Moved back one step.");
 
 export const holdAction = simple((u, id) => setHold(u, id, true), "Order put on hold.");
 export const resumeAction = simple((u, id) => setHold(u, id, false), "Order resumed.");

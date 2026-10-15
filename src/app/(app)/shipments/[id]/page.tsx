@@ -7,7 +7,8 @@ import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { SHIPMENT_FLOW, capacityWarning, isAccepting } from "@/server/shipments";
-import { detailsAction, freightAction, statusAction } from "../actions";
+import { bulkStageAction, detailsAction, freightAction, statusAction } from "../actions";
+import { BD_STAGES, STAGE_LABEL } from "@/lib/order-stages";
 
 export default async function ShipmentPage({ params }: PageProps<"/shipments/[id]">) {
   const user = await requireUser();
@@ -167,6 +168,21 @@ export default async function ShipmentPage({ params }: PageProps<"/shipments/[id
                   {next.map((st) => (
                     <option key={st} value={st}>
                       {humanize(st)}
+                    </option>
+                  ))}
+                </select>
+              </ActionForm>
+            </Card>
+          )}
+          {can(user.role, "bdReceiving:edit") && s.itemCount > 0 && (
+            <Card title="Orders: Bangladesh stages">
+              <p className="mb-2 text-xs text-gray-500">Moves every Buy for Me order in this shipment forward to the chosen status. Orders already there are skipped; Ready for home delivery and later need the customer payment collected first.</p>
+              <ActionForm action={bulkStageAction} submitLabel="Update all orders" inline>
+                <input type="hidden" name="id" value={s.id} />
+                <select name="stage" aria-label="Order status" className={`${inputCls} max-w-[18rem]`}>
+                  {BD_STAGES.map((st) => (
+                    <option key={st} value={st}>
+                      {STAGE_LABEL[st]}
                     </option>
                   ))}
                 </select>

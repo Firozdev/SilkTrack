@@ -11,6 +11,8 @@ import { can, canSeeSelling } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
 import { getOrderView } from "@/server/order-view";
 import { paymentSteps } from "@/lib/payment-timeline";
+import { BD_STAGES, STAGE_LABEL, isBdStage, nextStage, previousStage } from "@/lib/order-stages";
+import { balanceDue } from "@/server/order-stages";
 import { PaidRmb } from "../../purchasing/paid-rmb";
 import { prisma } from "@/lib/prisma";
 import { isReleasedForPurchase } from "@/server/requests";
@@ -21,6 +23,8 @@ import {
   commentAction,
   headerAction,
   holdAction,
+  advanceStageAction,
+  stageBackAction,
   qaAction,
   paymentAction,
   resumeAction,
@@ -45,6 +49,11 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
   const released = isReleasedForPurchase({ requestStatus: order.requestStatus, payments });
   const advance = sum(payments.filter((p) => p.type === "ADVANCE").map((p) => p.amountBdt));
   const hidden = <input type="hidden" name="orderId" value={order.id} />;
+  // Bangladesh stages (Admin): next step, step back with a reason.
+  const canStage = can(user.role, "bdReceiving:edit");
+  const next = canStage ? nextStage(order.status) : null;
+  const back = canStage ? previousStage(order.status) : null;
+  const dueBeforeCollect = next === "PAYMENT_COLLECTED" ? await balanceDue(order.id) : null;
 
   return (
     <>
@@ -333,6 +342,40 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
               </details>
             )}
           </Card>
+
+          {(next || back) && (
+            <Card title="Bangladesh stages">
+              <ol className="mb-3 space-y-0.5 text-sm">
+                {BD_STAGES.map((st, i) => {
+                  const at = isBdStage(order.status) ? BD_STAGES.indexOf(order.status) : -1;
+                  return (
+                    <li key={st} className={i <= at ? "text-gray-900" : "text-gray-400"}>
+                      {i < at ? "✓" : i === at ? "●" : "○"} {STAGE_LABEL[st]}
+                    </li>
+                  );
+                })}
+              </ol>
+              {next && (
+                <ActionForm action={advanceStageAction} submitLabel={`Move to: ${STAGE_LABEL[next]}`}>
+                  {hidden}
+                  <input type="hidden" name="expected" value={order.status} />
+                  {dueBeforeCollect && <p className="text-sm text-amber-700">Balance due {fmtBdt(dueBeforeCollect)} – check the payment before marking it collected.</p>}
+                  {next === "READY_FOR_DELIVERY" && <p className="text-xs text-gray-500">Allowed: customer payment is collected.</p>}
+                </ActionForm>
+              )}
+              {back && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-sm text-gray-600">Move back to {STAGE_LABEL[back as keyof typeof STAGE_LABEL]}…</summary>
+                  <ActionForm action={stageBackAction} submitLabel="Move back" variant="default" className="mt-2">
+                    {hidden}
+                    <Field label="Reason *">
+                      <input name="reason" required minLength={3} className={inputCls} />
+                    </Field>
+                  </ActionForm>
+                </details>
+              )}
+            </Card>
+          )}
 
           {!closed && (
             <Card title="Actions">

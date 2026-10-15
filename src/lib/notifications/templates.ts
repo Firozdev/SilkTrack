@@ -59,9 +59,13 @@ export const TEMPLATES: Record<EventType, T> = {
   ARRIVED_BD: (d) => ({ title: `${s(d.ref)} arrived in Bangladesh`, body: "We will share the final bill and delivery details soon." }),
   CUSTOMS_CLEARED: (d) => ({ title: `${s(d.ref)} cleared customs`, body: `Shipment ${s(d.shipment)} cleared customs in Bangladesh.` }),
 
-  INVOICE_READY: (d) => ({ title: `Invoice ready for ${s(d.ref)}`, body: `Total ৳${s(d.total)}. Open the order to see the bill and pay.` }),
+  INVOICE_READY: (d) => ({
+    title: `Invoice ready for ${s(d.ref)}`,
+    body: d.total ? `Total ৳${s(d.total)}. Open the order to see the bill and pay.` : d.due ? `Balance due ৳${s(d.due)}. Open the order to see the bill and pay.` : "Open the order to see your final bill.",
+  }),
   PAYMENT_SUBMITTED: (d) => ({ title: `Payment to verify: ${s(d.ref)}`, body: `৳${s(d.amount)} by ${s(d.method)} · ${s(d.reference)} for ${s(d.target)} – check it and approve in Payments to verify.` }),
   PAYMENT_CONFIRMED: (d, a) => (a === "customer" ? { title: `Payment received for ${s(d.ref)}`, body: `We confirmed your payment of ৳${s(d.amount)}. Thank you!` } : { title: `Payment confirmed: ${s(d.ref)}`, body: `৳${s(d.amount)} ${s(d.method)} (${s(d.kind)}).` }),
+  PAYMENT_COLLECTED: (d) => ({ title: `Payment collected for ${s(d.ref)}`, body: "Thank you – we are preparing your home delivery." }),
   READY_FOR_DELIVERY: (d) => ({ title: `${s(d.ref)} ready for home delivery`, body: "Fully paid – we will send it to your address soon." }),
   OUT_FOR_DELIVERY: (d) => ({ title: `${s(d.ref)} out for delivery`, body: s(d.how) || "On the way to your address." }),
   DELIVERED: (d) => ({ title: `${s(d.ref)} delivered`, body: "Please confirm in the portal that you received everything." }),
@@ -124,6 +128,7 @@ export const TYPE_LABEL: Record<EventType, string> = {
   INVOICE_READY: "Invoice ready",
   PAYMENT_SUBMITTED: "Payment to verify",
   PAYMENT_CONFIRMED: "Payment confirmed",
+  PAYMENT_COLLECTED: "Payment collected",
   READY_FOR_DELIVERY: "Ready for delivery",
   OUT_FOR_DELIVERY: "Out for delivery",
   DELIVERED: "Delivered",

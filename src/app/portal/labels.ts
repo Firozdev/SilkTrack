@@ -11,6 +11,8 @@ const LABELS: Record<string, [en: string, bn: string]> = {
   IN_SHIPMENT: ["Packed for shipping", "শিপমেন্টের জন্য প্রস্তুত"],
   IN_TRANSIT: ["On the way to Bangladesh", "বাংলাদেশের পথে"],
   ARRIVED_BD: ["Arrived in Bangladesh", "বাংলাদেশে পৌঁছেছে"],
+  INVOICE_SHARED: ["Final invoice shared", "চূড়ান্ত ইনভয়েস পাঠানো হয়েছে"],
+  PAYMENT_COLLECTED: ["Payment received", "পেমেন্ট গ্রহণ করা হয়েছে"],
   OUT_FOR_DELIVERY: ["Out for delivery", "ডেলিভারির পথে"],
   DELIVERED: ["Delivered", "ডেলিভারি হয়েছে"],
   CANCELLED: ["Cancelled", "বাতিল"],
