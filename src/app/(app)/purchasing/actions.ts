@@ -22,6 +22,8 @@ export const createPurchaseAction = formAction(async (fd) => {
       paymentMethod: zStrOpt,
       domesticShippingRmb: zDecOpt,
       serviceChargeRmb: zDecOpt,
+      // Checked on the server (required, > 0) so the message is the same however it is sent.
+      paidRmb: z.string().default(""),
       notes: zStrOpt,
       trackingUrl: z.string().trim().min(1, "Enter the order tracking URL"),
       expectedArrivalAt: zYmd,

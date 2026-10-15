@@ -26,7 +26,8 @@ export async function makeRate(ymd: string, rate: string, adminId: string) {
 }
 
 /** Required "purchase complete" details. */
-export const DONE = { trackingUrl: "https://trade.1688.com/order/123", expectedArrivalAt: new Date("2026-10-08T00:00:00Z") };
+/** Required purchase details; `paidRmb` is the total paid to the supplier (any value > 0 for tests). */
+export const DONE = { trackingUrl: "https://trade.1688.com/order/123", expectedArrivalAt: new Date("2026-10-08T00:00:00Z"), paidRmb: "100" };
 
 /**
  * Take a request through the China quotation to customer approval:

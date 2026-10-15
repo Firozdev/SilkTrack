@@ -58,6 +58,8 @@ export type PurchaseInput = {
   paymentMethod?: string;
   domesticShippingRmb?: string;
   serviceChargeRmb?: string;
+  /** What China actually paid the supplier (required, > 0). */
+  paidRmb: string;
   notes?: string;
   /** Supplier order / tracking page. */
   trackingUrl: string;
@@ -65,6 +67,13 @@ export type PurchaseInput = {
   expectedArrivalAt: Date;
   lines: { orderLineId: string; quantity: number; unitPriceRmb: string }[];
 };
+
+/** A required RMB amount: a number greater than 0, kept as Decimal (2 places). */
+function positiveRmb(v: string | undefined, message: string) {
+  const t = v?.trim() ?? "";
+  if (!/^\d+(\.\d+)?$/.test(t) || money(t).lte(0)) throw new UserError(message);
+  return money(t);
+}
 
 function checkCompletion(trackingUrl: string | undefined, expectedArrivalAt: Date | undefined) {
   if (!trackingUrl?.trim()) throw new UserError("Enter the order tracking URL");
@@ -81,6 +90,8 @@ function checkCompletion(trackingUrl: string | undefined, expectedArrivalAt: Dat
 export async function createPurchase(actor: Actor, input: PurchaseInput) {
   assertCan(actor.role, "purchase:edit");
   if (!input.lines.length) throw new UserError("Select at least one line");
+  const paidRmb = positiveRmb(input.paidRmb, "Enter the total RMB paid to the supplier");
+  for (const l of input.lines) positiveRmb(l.unitPriceRmb, "Enter a unit price (RMB) greater than 0 for every line you are buying");
   checkCompletion(input.trackingUrl, input.expectedArrivalAt);
   const orderLines = await prisma.orderLine.findMany({
     where: { id: { in: input.lines.map((l) => l.orderLineId) } },
@@ -161,10 +172,24 @@ export async function createPurchase(actor: Actor, input: PurchaseInput) {
         exchangeRateId,
         rateUsed,
         totalBdt: rmbToBdt(totalRmb, rateUsed),
+        paidRmb,
+        paidBdt: rmbToBdt(paidRmb, rateUsed),
         lines: { create: lineData },
       },
     });
-    await logChanges(tx, { entityType: "SupplierOrder", entityId: so.id, userId: actor.id, action: "CREATE" });
+    await logChanges(tx, {
+      entityType: "SupplierOrder",
+      entityId: so.id,
+      userId: actor.id,
+      action: "CREATE",
+      changes: [
+        { field: "paidRmb", oldValue: null, newValue: paidRmb.toFixed(2) },
+        { field: "rateUsed", oldValue: null, newValue: rateUsed.toString() },
+        { field: "paidBdt", oldValue: null, newValue: rmbToBdt(paidRmb, rateUsed).toFixed(2) },
+        { field: "totalRmb", oldValue: null, newValue: totalRmb.toFixed(2) },
+        ...(paidRmb.equals(totalRmb) ? [] : [{ field: "paidVsCalculatedRmb", oldValue: null, newValue: paidRmb.sub(totalRmb).toFixed(2) }]),
+      ],
+    });
     if (!needsApproval) {
       await setLineStatus(tx, orderLines.map((o) => o.id), "PURCHASED", { actorId: actor.id, message: `Purchased (${docNo("purchase", so.number)})`, onlyForward: true });
     }
@@ -229,7 +254,16 @@ export async function markPurchased(actor: Actor, id: string, completion: { trac
     }
     await tx.supplierOrder.update({
       where: { id },
-      data: { status: "PURCHASED", purchaseDate: new Date(), exchangeRateId, rateUsed, totalBdt: rmbToBdt(so.totalRmb, rateUsed), trackingUrl: trackingUrl!.trim(), expectedArrivalAt },
+      data: {
+        status: "PURCHASED",
+        purchaseDate: new Date(),
+        exchangeRateId,
+        rateUsed,
+        totalBdt: rmbToBdt(so.totalRmb, rateUsed),
+        ...(so.paidRmb ? { paidBdt: rmbToBdt(so.paidRmb, rateUsed) } : {}),
+        trackingUrl: trackingUrl!.trim(),
+        expectedArrivalAt,
+      },
     });
     await logChanges(tx, {
       entityType: "SupplierOrder",
@@ -239,6 +273,7 @@ export async function markPurchased(actor: Actor, id: string, completion: { trac
       changes: [
         { field: "status", oldValue: so.status, newValue: "PURCHASED" },
         ...(so.rateUsed.equals(rateUsed) ? [] : [{ field: "rateUsed", oldValue: so.rateUsed.toString(), newValue: rateUsed.toString() }]),
+        ...(so.paidRmb && so.paidBdt && !so.rateUsed.equals(rateUsed) ? [{ field: "paidBdt", oldValue: so.paidBdt.toFixed(2), newValue: rmbToBdt(so.paidRmb, rateUsed).toFixed(2) }] : []),
       ],
     });
     await setLineStatus(tx, so.lines.map((l) => l.orderLineId), "PURCHASED", { actorId: actor.id, message: `Purchased (${docNo("purchase", so.number)})`, onlyForward: true });

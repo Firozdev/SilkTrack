@@ -18,7 +18,7 @@ export async function getOrderView(orderId: string, viewer: Viewer) {
         include: {
           links: true,
           attachments: att,
-          purchaseLines: { include: { supplierOrder: { select: { id: true, number: true, status: true, trackingNo: true, courierName: true, expectedArrivalAt: true } } } },
+          purchaseLines: { orderBy: { createdAt: "asc" }, include: { supplierOrder: { select: { id: true, number: true, status: true, trackingNo: true, courierName: true, expectedArrivalAt: true, paidRmb: true, totalRmb: true, attachments: att } } } },
           receivingLines: { include: { receiving: { select: { id: true, number: true, receivedAt: true, condition: true, shipment: { select: { id: true, code: true, status: true, etaBd: true } } } } } },
           trackingEvents: { orderBy: { occurredAt: "asc" }, include: { createdBy: { select: { name: true } } } },
         },

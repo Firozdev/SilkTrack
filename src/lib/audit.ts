@@ -51,8 +51,10 @@ export async function logChanges(
   },
 ): Promise<void> {
   const { entityType, entityId, userId, action, changes = [] } = params;
+  // UPDATE: one row per changed field. CREATE / DELETE: one row, or one per
+  // recorded starting value (e.g. the amounts and rate of a new purchase).
   const rows: Prisma.AuditLogCreateManyInput[] =
-    action === "UPDATE"
+    action === "UPDATE" || changes.length
       ? changes.map((c) => ({
           entityType,
           entityId,

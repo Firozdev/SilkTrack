@@ -6,6 +6,7 @@ import { docNo, fmtBdt, fmtNum, fmtRate, fmtRmb, humanize } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { PaidRmb } from "../paid-rmb";
 import { decideAction, invoiceUploadAction, markPurchasedAction, problemAction, shippedAction } from "../actions";
 
 export default async function PurchasePage({ params }: PageProps<"/purchasing/[id]">) {
@@ -116,6 +117,8 @@ export default async function PurchasePage({ params }: PageProps<"/purchasing/[i
                 ["Total RMB", <b key="t">{fmtRmb(so.totalRmb)}</b>],
                 ["Rate used", fmtRate(so.rateUsed)],
                 ["BDT equivalent", fmtBdt(so.totalBdt)],
+                ["Paid to supplier", <PaidRmb key="p" paidRmb={so.paidRmb} totalRmb={so.totalRmb} />],
+                ["Paid in BDT (same rate)", so.paidBdt ? fmtBdt(so.paidBdt) : "—"],
                 ["Supplier order no.", so.supplierOrderNo],
                 ["Paid with", so.paymentMethod],
               ]}

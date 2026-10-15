@@ -4,6 +4,8 @@ import { ForbiddenError } from "@/lib/permissions";
 import { BD_TZ, toYmd, today } from "@/lib/dates";
 import { chinaInbox, createRequest, recordPayment } from "@/server/requests";
 import { createPurchase, decidePriceChange, markProblem, markPurchased, markShippedBySupplier, purchaseQueue, requestUpfrontPayment } from "@/server/purchasing";
+import { getOrderView } from "@/server/order-view";
+import { saveAttachments } from "@/lib/uploads";
 import type { Actor } from "@/server/actor";
 import { DONE, makeRate, makeUser, quoteAndApprove, resetDb } from "../helpers";
 
@@ -61,12 +63,48 @@ describe("China purchasing", () => {
 
   it("purchase complete requires the order tracking URL and estimated receive date", async () => {
     const o = await approvedOrder();
-    const base = { supplierName: "S", platform: "TAOBAO" as const, lines: [{ orderLineId: o.lines[0].id, quantity: 1, unitPriceRmb: "10" }] };
+    const base = { supplierName: "S", platform: "TAOBAO" as const, paidRmb: "10", lines: [{ orderLineId: o.lines[0].id, quantity: 1, unitPriceRmb: "10" }] };
     await expect(createPurchase(china, { ...base, trackingUrl: "", expectedArrivalAt: DONE.expectedArrivalAt })).rejects.toThrow(/tracking URL/);
     await expect(createPurchase(china, { ...base, trackingUrl: "trade.1688.com/x", expectedArrivalAt: DONE.expectedArrivalAt })).rejects.toThrow(/http/);
     const so = await createPurchase(china, { ...base, ...DONE });
     expect(so.trackingUrl).toBe(DONE.trackingUrl);
     expect(so.expectedArrivalAt?.toISOString()).toBe(DONE.expectedArrivalAt.toISOString());
+  });
+
+  it("total RMB paid to the supplier is required (> 0), saved with the rate and audited; screenshot optional", async () => {
+    const o = await approvedOrder(4, "10");
+    const before = await prisma.supplierOrder.count();
+    const base = { ...DONE, supplierName: "S", platform: "TAOBAO" as const, domesticShippingRmb: "5", lines: [{ orderLineId: o.lines[0].id, quantity: 2, unitPriceRmb: "10" }] };
+    for (const paidRmb of ["", "  ", "0", "0.00", "0.001", "-5", "abc", undefined as unknown as string]) {
+      await expect(createPurchase(china, { ...base, paidRmb }), JSON.stringify(paidRmb)).rejects.toThrow(/total RMB paid/);
+    }
+    await expect(createPurchase(china, { ...base, lines: [{ ...base.lines[0], unitPriceRmb: "0" }] })).rejects.toThrow(/unit price \(RMB\) greater than 0/);
+    expect(await prisma.supplierOrder.count()).toBe(before); // nothing saved
+    expect((await prisma.orderLine.findUniqueOrThrow({ where: { id: o.lines[0].id } })).status).toBe("APPROVED");
+
+    // Without a screenshot: saved; paid 30 vs calculated 2 × 10 + 5 = 25
+    const so = await createPurchase(china, { ...base, paidRmb: " 30.5 " });
+    expect([so.paidRmb?.toString(), so.totalRmb.toString(), so.rateUsed.toString(), so.paidBdt?.toString()]).toEqual(["30.5", "25", "17", "518.5"]);
+    const audit = await prisma.auditLog.findMany({ where: { entityType: "SupplierOrder", entityId: so.id }, orderBy: { field: "asc" } });
+    expect(audit.map((a) => [a.action, a.field, a.newValue])).toEqual([
+      ["CREATE", "paidBdt", "518.50"],
+      ["CREATE", "paidRmb", "30.50"],
+      ["CREATE", "paidVsCalculatedRmb", "5.50"],
+      ["CREATE", "rateUsed", "17"],
+      ["CREATE", "totalRmb", "25.00"],
+    ]);
+    expect(await prisma.attachment.count({ where: { supplierOrderId: so.id } })).toBe(0);
+
+    // With a screenshot (as the form does): stored on the purchase, which the order page shows
+    const so2 = await createPurchase(china, { ...base, paidRmb: "25", lines: [{ ...base.lines[0], quantity: 1 }] });
+    const png = Buffer.from("89504e470d0a1a0a0000000d49484452000000040000000208060000007fa87d630000001249444154789c63907358ff1f1933a00b00000a491061fb654d210000000049454e44ae426082", "hex");
+    await saveAttachments([new File([new Uint8Array(png)], "alipay.png", { type: "image/png" })], "SUPPLIER_INVOICE", china.id, { supplierOrderId: so2.id });
+    const view = (await getOrderView(o.id, { role: "ADMIN" }))!;
+    const shown = view.lines[0].purchaseLines.map((p) => [p.supplierOrder.paidRmb?.toString(), p.supplierOrder.attachments.map((a) => a.fileName)]);
+    expect(shown).toEqual([
+      ["30.5", []],
+      ["25", ["alipay.png"]],
+    ]);
   });
 
   it("CS cannot record purchases", async () => {

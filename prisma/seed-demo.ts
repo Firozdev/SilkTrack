@@ -62,6 +62,20 @@ async function main() {
   await prisma.paymentSubmission.create({ data: { customerId: portalCustomer.id, accountId: account.id, orderId: paidOrder.id, amountBdt: "2000.00", method: "BKASH", reference: `${ref}A`, paidAt: day(3), status: "APPROVED", reviewedById: admin.id, reviewedAt: confirmedAt, paymentId: advance.id } });
   await prisma.paymentSubmission.create({ data: { customerId: portalCustomer.id, accountId: account.id, orderId: paidOrder.id, amountBdt: "3000.00", method: "NAGAD", reference: `${ref}B`, paidAt: day(0) } });
 
+  // Ready for China to buy (customer approved, advance confirmed): Purchasing → tick it → Record purchase
+  // needs "Total RMB paid to supplier"; the screenshot is optional.
+  const toBuy = await prisma.order.create({
+    data: {
+      customerId: staffCustomer.id,
+      source: "STAFF",
+      createdById: admin.id,
+      requestStatus: "CUSTOMER_APPROVED",
+      shippingMethod: "AIR",
+      lines: { create: [{ ...line("Phone stand – ready to buy (demo)", 20), status: "APPROVED", quotedUnitPriceRmb: "12.50" }] },
+    },
+  });
+  await prisma.payment.create({ data: { orderId: toBuy.id, type: "ADVANCE", amountBdt: "3000.00", method: "CASH", receivedById: admin.id, paidAt: new Date() } });
+
   // An agent with two customers and one request placed for each.
   const agent = await prisma.portalAccount.upsert({
     where: { phone: AGENT_PHONE },
@@ -208,7 +222,7 @@ async function main() {
     await note("PURCHASED", { ref: g.ref, purchase: "PUR-DEMO", customer: "Demo Agent Customer" }, g.about, g.staff, g.portal);
   }
 
-  console.log("Demo data added: 5 Buy for Me (2 by the agent), 2 Ship for Me, 3 payments to confirm (1 with a confirmed advance in its timeline), 1 open issue.");
+  console.log("Demo data added: 6 Buy for Me (2 by the agent, 1 ready to buy), 2 Ship for Me, 3 payments to confirm (1 with a confirmed advance in its timeline), 1 open issue.");
   console.log(`Customer portal login: mobile ${PORTAL_PHONE} / password ${PORTAL_PASSWORD}`);
   console.log(`Agent portal login:    mobile ${AGENT_PHONE} / password ${AGENT_PASSWORD}`);
   console.log(`CS login:    cs.demo@silktrack.test / ${STAFF_PASSWORD}`);

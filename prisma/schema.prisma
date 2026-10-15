@@ -1113,6 +1113,10 @@ model SupplierOrder {
   exchangeRate        ExchangeRate @relation(fields: [exchangeRateId], references: [id])
   rateUsed            Decimal      @db.Decimal(12, 4)
   totalBdt            Decimal      @db.Decimal(14, 2)
+  /// What China actually paid the supplier for this purchase (required for new purchases).
+  paidRmb             Decimal?     @db.Decimal(14, 2)
+  /// paidRmb × rateUsed, using the rate locked on the purchase.
+  paidBdt             Decimal?     @db.Decimal(14, 2)
 
   // Leg 1 tracking: supplier → China warehouse
   /// Supplier order / logistics page; required when the purchase is completed.
