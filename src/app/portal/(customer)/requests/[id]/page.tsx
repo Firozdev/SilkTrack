@@ -35,6 +35,8 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
   const expired = !!q && q.validUntil < today(BD_TZ);
   const files = o.attachments.filter((f) => f.kind !== "QA_PHOTO");
   const qaPhotos = o.attachments.filter((f) => f.kind === "QA_PHOTO");
+  // China's product images, per quotation line (shown once the quote is sent to the customer).
+  const quoteImages = new Map((q?.lines ?? []).map((l) => [l.id, (q?.attachments ?? []).filter((a) => a.estimateOrderLineId === l.orderLineId)]));
   // Payment sent / confirmed steps in the tracking timeline (one product per order, so each card shows them).
   const payments = paymentSteps(o.payments, o.paymentSubmissions).map(
     (p): TimelineEvent => ({
@@ -78,7 +80,10 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
           <Table head={[t.colProducts, t.qty.replace(" *", ""), t.unitPrice, t.amountCol]}>
             {q.breakdown.lines.map((l) => (
               <tr key={l.id}>
-                <td className={tdCls}>{l.productName}</td>
+                <td className={tdCls}>
+                  {l.productName}
+                  <Attachments items={quoteImages.get(l.id) ?? []} base="/portal/files" customerTag={null} />
+                </td>
                 <td className={tdCls}>{l.quantity}</td>
                 <td className={`${tdCls} tabular-nums`}>{fmtBdt(l.unitPrice)}</td>
                 <td className={`${tdCls} tabular-nums`}>{fmtBdt(l.amount)}</td>

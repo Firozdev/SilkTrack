@@ -1,4 +1,5 @@
 import "server-only";
+import { quoteImageSelect } from "./quote-images";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { D, sum, type Decimal } from "@/lib/money";
@@ -28,7 +29,7 @@ export function portalAttachment(customerIds: string[], id: string) {
     where: {
       id,
       ...VISIBLE_FILE,
-      OR: [{ shippingOrder: { customerId } }, { order: { customerId } }, { orderLine: { order: { customerId } } }, { sample: { customerId } }, { delivery: { order: { customerId } } }, { paymentSubmission: { customerId } }, { shippingOrderItem: { shippingOrder: { customerId } } }, { sampleLine: { sample: { customerId } } }],
+      OR: [{ shippingOrder: { customerId } }, { order: { customerId } }, { orderLine: { order: { customerId } } }, { sample: { customerId } }, { delivery: { order: { customerId } } }, { paymentSubmission: { customerId } }, { shippingOrderItem: { shippingOrder: { customerId } } }, { sampleLine: { sample: { customerId } } }, { kind: "QUOTE_IMAGE", estimate: { order: { customerId }, status: { in: ["SENT_TO_CUSTOMER", "APPROVED"] } } }],
     },
     select: { storageKey: true, mimeType: true, fileName: true },
   });
@@ -134,7 +135,8 @@ export async function portalOrder(customerId: string, orderId: string) {
           shippingMethod: true,
           grossWeightKg: true,
           cbm: true,
-          lines: { select: { id: true, productName: true, quantity: true, sellingPriceBdt: true } },
+          lines: { select: { id: true, productName: true, quantity: true, sellingPriceBdt: true, orderLineId: true } },
+          attachments: quoteImageSelect,
         },
       },
       invoices: {

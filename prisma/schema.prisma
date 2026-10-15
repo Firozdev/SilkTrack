@@ -335,6 +335,8 @@ enum AttachmentKind {
   SUPPLIER_INVOICE
   PROOF_OF_DELIVERY
   QA_PHOTO
+  /// Product image China attached to a line of its quotation.
+  QUOTE_IMAGE
   OTHER
 }
 
@@ -645,6 +647,13 @@ model Attachment {
   shippingOrderItem   ShippingOrderItem? @relation(fields: [shippingOrderItemId], references: [id], onDelete: Cascade)
   sampleLineId        String?
   sampleLine          SampleLine?        @relation(fields: [sampleLineId], references: [id], onDelete: Cascade)
+  /// Quotation image: the version (estimateId) and which product of it (the
+  /// order line). Not linked to EstimateLine, which is recreated on every save.
+  estimateId          String?
+  estimate            Estimate?          @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  estimateOrderLineId String?
+
+  @@index([estimateId])
 }
 
 /// Customer money in BDT: advance before purchase, balance on delivery, refunds.
@@ -745,6 +754,8 @@ model Estimate {
   updatedAt       DateTime  @updatedAt
 
   lines EstimateLine[]
+  /// Product images China attached (per product: estimateOrderLineId).
+  attachments Attachment[]
 
   generatedDocuments GeneratedDocument[]
 

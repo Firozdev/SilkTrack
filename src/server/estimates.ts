@@ -15,6 +15,7 @@ import { rateForConversion } from "./rates";
 import { quoteBreakdown } from "./quote-breakdown";
 import { applyCustomerApproval, applyCustomerRejection, markCustomerApproved, markRejected } from "./requests";
 import { setLineStatus } from "./status";
+import { copyQuoteImages, quoteImageSelect } from "./quote-images";
 import type { Actor } from "./actor";
 
 type Tx = Prisma.TransactionClient;
@@ -338,6 +339,7 @@ export async function reviseQuotation(actor: Actor, id: string, reason?: string)
         },
       },
     });
+    await copyQuoteImages(tx, e.id, n.id);
     if (e.order.requestStatus !== "NEW") {
       await tx.order.update({ where: { id: e.orderId }, data: { requestStatus: "NEW" } });
       await logChanges(tx, { entityType: "Order", entityId: e.orderId, userId: actor.id, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: e.order.requestStatus, newValue: "NEW" }] });
@@ -356,6 +358,7 @@ export function getQuotation(id: string) {
     where: { id },
     include: {
       lines: { include: { orderLine: { select: { lineNo: true, color: true, size: true, model: true, links: { select: { url: true }, take: 1 } } } }, orderBy: { orderLine: { lineNo: "asc" } } },
+      attachments: quoteImageSelect,
       order: { select: { id: true, number: true, type: true, requestStatus: true, shippingMethod: true, customerId: true, customer: { select: { name: true, code: true, phone: true, address: true, district: true } } } },
       createdBy: { select: { name: true } },
       reviewedBy: { select: { name: true } },

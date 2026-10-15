@@ -5,8 +5,9 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { formAction } from "@/lib/action";
 import { dayFromYmd } from "@/lib/dates";
-import { fields, rows, zDec, zDecOpt, zIntMin0, zStrOpt, zYmd } from "@/lib/forms";
+import { fields, files, rows, zDec, zDecOpt, zIntMin0, zStrOpt, zYmd } from "@/lib/forms";
 import { requireUser } from "@/lib/session";
+import { addQuoteImages, checkQuoteImages, removeQuoteImages } from "@/server/quote-images";
 import {
   approveQuotation,
   rejectQuotation,
@@ -59,7 +60,12 @@ export const saveQuotationAction = formAction(async (fd) => {
   // Selling prices are entered per unit; stored as line totals (× the order line's quantity).
   const qty = new Map((await prisma.orderLine.findMany({ where: { orderId: h.orderId }, select: { id: true, quantity: true } })).map((l) => [l.id, l.quantity]));
   const lines = parsed.map(({ sellingUnitBdt, ...l }) => ({ ...l, sellingPriceBdt: sellingUnitBdt ? lineTotal(sellingUnitBdt, qty.get(l.orderLineId) ?? 0) : undefined }));
+  // Product images per line (optional): checked before anything is saved.
+  const images = Object.fromEntries(parsed.map((l) => [l.orderLineId, files(fd, `img.${l.orderLineId}`)]));
+  await checkQuoteImages(images);
   const e = await saveQuotation(user, h.orderId, { ...h, validUntil: dayFromYmd(h.validUntil), lines });
+  await removeQuoteImages(user, e.id, fd.getAll("removeImage").filter((v): v is string => typeof v === "string"));
+  await addQuoteImages(user, e.id, images);
   if (h.intent === "submit") await submitQuotation(user, e.id);
   revalidatePath(`/requests/${h.orderId}`);
   redirect(`/estimates/${e.id}`);

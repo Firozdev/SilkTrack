@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
-import { A, Alert, Badge, Card, Dl, PageHeader, Table, btnCls, inputCls, tdCls } from "@/components/ui";
+import { A, Alert, Attachments, Badge, Card, Dl, PageHeader, Table, btnCls, inputCls, tdCls } from "@/components/ui";
 import { rmbToBdt, sum, type Decimal } from "@/lib/money";
 import { BD_TZ, fmtDateTime, fmtDay, today } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg, fmtNum, fmtRate, fmtRmb, humanize } from "@/lib/format";
@@ -9,6 +9,7 @@ import { can, canSeeSelling, redactFor } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
 import { quoteBreakdown } from "@/server/quote-breakdown";
 import { getQuotation } from "@/server/estimates";
+import { imagesByLine } from "@/server/quote-images";
 import { approveAction, rejectAction, reviseAction, sendAction, submitAction } from "../actions";
 import { SellingForm } from "./selling-form";
 
@@ -18,6 +19,7 @@ export default async function QuotationPage({ params }: PageProps<"/estimates/[i
   const raw = await getQuotation(id);
   if (!raw) notFound();
   const e = redactFor(user, raw);
+  const images = imagesByLine(raw.attachments);
   const isChina = can(user.role, "estimate:edit");
   const isBd = can(user.role, "quote:edit");
   const selling = canSeeSelling(user);
@@ -70,6 +72,10 @@ export default async function QuotationPage({ params }: PageProps<"/estimates/[i
                       {[l.orderLine?.color, l.orderLine?.size, l.orderLine?.model].filter(Boolean).join(" · ")}
                       {l.moq ? ` · MOQ ${l.moq}` : ""}
                     </div>
+                    {(() => {
+                      const imgs = images.get(l.orderLineId ?? "") ?? [];
+                      return imgs.length ? <Attachments items={imgs} /> : <Badge value="PENDING" label="No image" />;
+                    })()}
                   </td>
                   <td className={tdCls}>{l.quantity}</td>
                   <td className={`${tdCls} tabular-nums`}>{fmtRmb(l.unitPriceRmb)}</td>
