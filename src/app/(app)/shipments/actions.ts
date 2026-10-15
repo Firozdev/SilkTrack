@@ -8,6 +8,8 @@ import { dayFromYmd } from "@/lib/dates";
 import { fields, zBool, zDec, zDecOpt, zStrOpt, zYmd, zYmdOpt } from "@/lib/forms";
 import { requireUser } from "@/lib/session";
 import { createShipment, setFreight, setShipmentStatus, updateShipmentDetails } from "@/server/shipments";
+import { bulkMoveShipmentOrders } from "@/server/order-stages";
+import { BD_STAGES } from "@/lib/order-stages";
 
 const STATUSES = ["UPCOMING", "OPEN", "CLOSED", "DEPARTED", "IN_TRANSIT", "ARRIVED_BD", "CUSTOMS_CLEARED", "COMPLETED"] as const;
 
@@ -67,4 +69,15 @@ export const freightAction = formAction(async (fd) => {
   await setFreight(user, f.id, f);
   revalidatePath(`/shipments/${f.id}`);
   return { ok: true, message: "Freight saved and split across items." };
+});
+
+/** Admin: move every order in the shipment to one Bangladesh stage. */
+export const bulkStageAction = formAction(async (fd) => {
+  const user = await requireUser();
+  const { id, stage } = z.object({ id: z.string(), stage: z.enum(BD_STAGES) }).parse(fields(fd));
+  const r = await bulkMoveShipmentOrders(user, id, stage);
+  revalidatePath(`/shipments/${id}`);
+  const moved = r.moved.length ? `Moved ${r.moved.length}: ${r.moved.join(", ")}.` : "No order moved.";
+  const skipped = r.skipped.length ? ` Skipped ${r.skipped.length}: ${r.skipped.map((x) => `${x.ref} (${x.why})`).join(", ")}.` : "";
+  return { ok: true, message: moved + skipped };
 });

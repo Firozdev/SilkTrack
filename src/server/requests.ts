@@ -245,7 +245,7 @@ export async function applyCustomerRejection(orderId: string, actorId: string | 
   });
 }
 
-const PURCHASED_OR_LATER = ["PURCHASED", "AT_CHINA_WAREHOUSE", "IN_SHIPMENT", "IN_TRANSIT", "ARRIVED_BD", "OUT_FOR_DELIVERY", "DELIVERED"];
+const PURCHASED_OR_LATER = ["PURCHASED", "AT_CHINA_WAREHOUSE", "IN_SHIPMENT", "IN_TRANSIT", "ARRIVED_BD", "CUSTOMS_CLEARED", "INVOICE_SHARED", "PAYMENT_COLLECTED", "READY_FOR_DELIVERY", "OUT_FOR_DELIVERY", "DELIVERED"];
 
 export async function cancelOrder(actor: Actor, orderId: string, reason: string) {
   assertCan(actor.role, "request:edit");

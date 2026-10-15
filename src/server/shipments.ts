@@ -235,10 +235,11 @@ export async function updateShipmentDetails(actor: Actor, id: string, input: Shi
   });
 }
 
-const STATUS_TO_LINE: Partial<Record<ShipmentStatus, "IN_TRANSIT" | "ARRIVED_BD">> = {
+const STATUS_TO_LINE: Partial<Record<ShipmentStatus, "IN_TRANSIT" | "ARRIVED_BD" | "CUSTOMS_CLEARED">> = {
   DEPARTED: "IN_TRANSIT",
   IN_TRANSIT: "IN_TRANSIT",
   ARRIVED_BD: "ARRIVED_BD",
+  CUSTOMS_CLEARED: "CUSTOMS_CLEARED",
 };
 
 const STATUS_MESSAGE: Partial<Record<ShipmentStatus, string>> = {
@@ -276,12 +277,13 @@ export async function setShipmentStatus(actor: Actor, id: string, status: Shipme
   await prisma.$transaction(async (tx) => {
     await tx.shipment.update({ where: { id }, data: stamp });
     await logChanges(tx, { entityType: "Shipment", entityId: id, userId: actor.id, action: "UPDATE", changes: [{ field: "status", oldValue: s.status, newValue: status }] });
-    const lineStatus = STATUS_TO_LINE[status] ?? (to > SHIPMENT_FLOW.indexOf("ARRIVED_BD") ? "ARRIVED_BD" : to > SHIPMENT_FLOW.indexOf("IN_TRANSIT") ? "IN_TRANSIT" : undefined);
+    const lineStatus = STATUS_TO_LINE[status] ?? (to > SHIPMENT_FLOW.indexOf("CUSTOMS_CLEARED") ? "CUSTOMS_CLEARED" : to > SHIPMENT_FLOW.indexOf("ARRIVED_BD") ? "ARRIVED_BD" : to > SHIPMENT_FLOW.indexOf("IN_TRANSIT") ? "IN_TRANSIT" : undefined);
     const message = `${STATUS_MESSAGE[status] ?? status} – ${s.code}${s.masterTrackingNo ? ` (${s.masterTrackingNo})` : ""}`;
     if (lineStatus) {
       await setLineStatus(tx, lineIds, lineStatus, { actorId: actor.id, message, onlyForward: true, shipmentId: id, leg: "CHINA_TO_BD", trackingNo: s.masterTrackingNo });
     }
-    if (status === "CUSTOMS_CLEARED" || status === "CLOSED") {
+    // Closing has no order status of its own – a timeline note only (customs clearance now sets one above).
+    if (status === "CLOSED") {
       for (const orderLineId of new Set(lineIds)) {
         await tx.trackingEvent.create({ data: { orderLineId, leg: "CHINA_TO_BD", message, shipmentId: id, createdById: actor.id } });
       }

@@ -59,6 +59,7 @@ export const RULES = {
   INVOICE_READY: R([], true),
   PAYMENT_SUBMITTED: R(["ADMIN", "CS"]),
   PAYMENT_CONFIRMED: R(["CS"], true),
+  PAYMENT_COLLECTED: R([], true),
   READY_FOR_DELIVERY: R([], true),
   OUT_FOR_DELIVERY: R([], true),
   DELIVERED: R([], true),
