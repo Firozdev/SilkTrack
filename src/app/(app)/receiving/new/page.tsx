@@ -8,6 +8,7 @@ import { requirePagePermission } from "@/lib/session";
 import { acceptingShipments } from "@/server/shipments";
 import { estimatedPackaging } from "@/server/receiving";
 import { receiveAction } from "../actions";
+import { ShipmentPicker } from "../shipment-picker";
 
 const CONDITIONS = [
   ["OK", "OK"],
@@ -114,25 +115,7 @@ export default async function ReceivePage({ searchParams }: PageProps<"/receivin
           </div>
         </Card>
         <Card title="Shipment">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Ship by">
-              <select name="shippingMethod" defaultValue={method} className={inputCls}>
-                <option value="AIR">Air</option>
-                <option value="SEA">Sea</option>
-              </select>
-            </Field>
-            <Field label="Assign to shipment" hint="Suggested: the open shipment for this method; after cut-off, next week's.">
-              <select name="shipmentId" defaultValue="auto" className={inputCls}>
-                <option value="auto">Suggested (open {method.toLowerCase()} shipment)</option>
-                {shipments.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.code} ({s.status.toLowerCase()})
-                  </option>
-                ))}
-                <option value="none">Don&apos;t assign yet</option>
-              </select>
-            </Field>
-          </div>
+          <ShipmentPicker method={method} shipments={shipments.map((x) => ({ id: x.id, code: x.code, method: x.method, status: x.status }))} />
         </Card>
       </ActionForm>
     </>

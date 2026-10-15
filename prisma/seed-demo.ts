@@ -2,6 +2,7 @@
 // Usage: npm run db:seed:demo   (each run adds another set)
 import { prisma } from "../scripts/db";
 import { hashPassword } from "../src/lib/password";
+import { CN_TZ, addDays, isoWeek, isoWeekStart, today } from "../src/lib/dates";
 import { RULES, type EventType } from "../src/lib/notifications/rules";
 import { render, type Data } from "../src/lib/notifications/templates";
 import type { Role } from "../src/generated/prisma/enums";
@@ -222,7 +223,30 @@ async function main() {
     await note("PURCHASED", { ref: g.ref, purchase: "PUR-DEMO", customer: "Demo Agent Customer" }, g.about, g.staff, g.portal);
   }
 
-  console.log("Demo data added: 6 Buy for Me (2 by the agent, 1 ready to buy), 2 Ship for Me, 3 payments to confirm (1 with a confirmed advance in its timeline), 1 open issue.");
+  // Air and Sea shipments in several statuses: the shipment pickers only list Open / Upcoming ones of the
+  // chosen method (Closed, Departed, In transit, Completed never appear). Existing weeks are left as they are.
+  const shipmentWeeks: [number, "UPCOMING" | "CLOSED" | "DEPARTED" | "IN_TRANSIT" | "COMPLETED"][] = [
+    [2, "UPCOMING"],
+    [-1, "CLOSED"],
+    [-2, "DEPARTED"],
+    [-3, "IN_TRANSIT"],
+    [-5, "COMPLETED"],
+  ];
+  for (const [offset, status] of shipmentWeeks) {
+    const { year, week } = isoWeek(addDays(today(CN_TZ), 7 * offset));
+    for (const method of ["AIR", "SEA"] as const) {
+      const monday = isoWeekStart(year, week);
+      const code = `SHP-${year}-W${String(week).padStart(2, "0")}-${method === "AIR" ? "A" : "S"}`;
+      const departure = addDays(monday, 7);
+      await prisma.shipment.upsert({
+        where: { code },
+        update: {},
+        create: { code, year, weekNumber: week, method, status, cutoffDate: addDays(monday, 5), plannedDepartureDate: departure, etaBd: addDays(departure, method === "AIR" ? 5 : 30) },
+      });
+    }
+  }
+
+  console.log("Demo data added: 6 Buy for Me (2 by the agent, 1 ready to buy), 2 Ship for Me, 3 payments to confirm (1 with a confirmed advance in its timeline), 1 open issue, Air + Sea shipments in several statuses.");
   console.log(`Customer portal login: mobile ${PORTAL_PHONE} / password ${PORTAL_PASSWORD}`);
   console.log(`Agent portal login:    mobile ${AGENT_PHONE} / password ${AGENT_PASSWORD}`);
   console.log(`CS login:    cs.demo@silktrack.test / ${STAFF_PASSWORD}`);
