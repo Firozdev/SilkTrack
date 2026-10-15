@@ -48,6 +48,20 @@ async function main() {
   await prisma.paymentSubmission.create({ data: { customerId: portalCustomer.id, accountId: account.id, orderId: buyPortal.id, amountBdt: "1500.00", method: "BKASH", reference: ref, paidAt: new Date() } });
   await prisma.paymentSubmission.create({ data: { customerId: portalCustomer.id, accountId: account.id, shippingOrderId: shipPortal.id, amountBdt: "800.00", method: "NAGAD", reference: `${ref}N`, paidAt: new Date() } });
 
+  // Payment dates in the tracking timeline: an advance the customer sent 3 days ago and Admin confirmed
+  // yesterday, and a balance sent today that is waiting on "Payments to verify".
+  const day = (ago: number) => {
+    const d = new Date();
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - ago));
+  };
+  const paidOrder = await prisma.order.create({
+    data: { customerId: portalCustomer.id, source: "PORTAL", requestStatus: "CUSTOMER_APPROVED", shippingMethod: "AIR", lines: { create: [{ ...line("Wireless earbuds – payment timeline (demo)", 5), status: "APPROVED" }] } },
+  });
+  const confirmedAt = new Date(Date.now() - 86_400_000);
+  const advance = await prisma.payment.create({ data: { orderId: paidOrder.id, type: "ADVANCE", amountBdt: "2000.00", method: "BKASH", reference: `${ref}A`, note: "Reported by customer (demo)", receivedById: admin.id, paidAt: day(3), createdAt: confirmedAt } });
+  await prisma.paymentSubmission.create({ data: { customerId: portalCustomer.id, accountId: account.id, orderId: paidOrder.id, amountBdt: "2000.00", method: "BKASH", reference: `${ref}A`, paidAt: day(3), status: "APPROVED", reviewedById: admin.id, reviewedAt: confirmedAt, paymentId: advance.id } });
+  await prisma.paymentSubmission.create({ data: { customerId: portalCustomer.id, accountId: account.id, orderId: paidOrder.id, amountBdt: "3000.00", method: "NAGAD", reference: `${ref}B`, paidAt: day(0) } });
+
   // An agent with two customers and one request placed for each.
   const agent = await prisma.portalAccount.upsert({
     where: { phone: AGENT_PHONE },
@@ -194,7 +208,7 @@ async function main() {
     await note("PURCHASED", { ref: g.ref, purchase: "PUR-DEMO", customer: "Demo Agent Customer" }, g.about, g.staff, g.portal);
   }
 
-  console.log("Demo data added: 4 Buy for Me (2 by the agent), 2 Ship for Me, 2 payments to confirm, 1 open issue.");
+  console.log("Demo data added: 5 Buy for Me (2 by the agent), 2 Ship for Me, 3 payments to confirm (1 with a confirmed advance in its timeline), 1 open issue.");
   console.log(`Customer portal login: mobile ${PORTAL_PHONE} / password ${PORTAL_PASSWORD}`);
   console.log(`Agent portal login:    mobile ${AGENT_PHONE} / password ${AGENT_PASSWORD}`);
   console.log(`CS login:    cs.demo@silktrack.test / ${STAFF_PASSWORD}`);

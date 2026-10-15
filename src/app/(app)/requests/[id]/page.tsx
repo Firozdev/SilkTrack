@@ -10,6 +10,7 @@ import { sum } from "@/lib/money";
 import { can, canSeeSelling } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
 import { getOrderView } from "@/server/order-view";
+import { paymentSteps } from "@/lib/payment-timeline";
 import { prisma } from "@/lib/prisma";
 import { isReleasedForPurchase } from "@/server/requests";
 import { requestSampleAction } from "../../samples/actions";
@@ -421,29 +422,47 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
 }
 
 function Timeline({ order, tz }: { order: NonNullable<Awaited<ReturnType<typeof getOrderView>>>; tz: string }) {
-  const events = order.lines
-    .flatMap((l) => l.trackingEvents.map((e) => ({ ...e, line: l })))
-    .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+  const events = [
+    ...order.lines.flatMap((l) => l.trackingEvents.map((e) => ({ kind: "tracking" as const, ...e, line: l }))),
+    ...paymentSteps(order.payments, order.paymentSubmissions).map((p) => ({ kind: "payment" as const, ...p, occurredAt: p.at })),
+  ].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
   if (!events.length) return <p className="text-sm text-gray-400">No events yet.</p>;
   return (
     <ol className="space-y-2 border-l border-gray-200 pl-4">
-      {events.map((e) => (
-        <li key={e.id} className="relative text-sm">
-          <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-blue-500" />
-          <div className="text-xs text-gray-500">
-            {fmtDateTime(e.occurredAt, tz)} · {humanize(e.leg)} · line {e.line.lineNo} ({e.line.productName}){e.createdBy && <> · {e.createdBy.name}</>}
-          </div>
-          <div>
-            {e.status && <Badge value={e.status} />} {e.message}
-            {e.trackingNo && (
+      {events.map((e) =>
+        e.kind === "payment" ? (
+          <li key={e.id} className="relative text-sm">
+            <span className={`absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full ${e.waiting ? "bg-amber-400" : "bg-green-500"}`} />
+            <div className="text-xs text-gray-500">
+              {e.dayOnly ? fmtDay(e.occurredAt) : fmtDateTime(e.occurredAt, tz)} · Payment{e.confirmedBy && <> · confirmed by {e.confirmedBy}</>}
+            </div>
+            <div>
+              <b>{e.step === "SENT" ? "Payment sent" : "Payment confirmed"}</b> · {fmtBdt(e.amountBdt)}
               <span className="text-gray-500">
                 {" "}
-                – {e.courier} {e.trackingNo}
+                · {[e.type && humanize(e.type), humanize(e.method)].filter(Boolean).join(" · ")}
+                {e.waiting && " · waiting for confirmation"}
               </span>
-            )}
-          </div>
-        </li>
-      ))}
+            </div>
+          </li>
+        ) : (
+          <li key={e.id} className="relative text-sm">
+            <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-blue-500" />
+            <div className="text-xs text-gray-500">
+              {fmtDateTime(e.occurredAt, tz)} · {humanize(e.leg)} · line {e.line.lineNo} ({e.line.productName}){e.createdBy && <> · {e.createdBy.name}</>}
+            </div>
+            <div>
+              {e.status && <Badge value={e.status} />} {e.message}
+              {e.trackingNo && (
+                <span className="text-gray-500">
+                  {" "}
+                  – {e.courier} {e.trackingNo}
+                </span>
+              )}
+            </div>
+          </li>
+        ),
+      )}
     </ol>
   );
 }

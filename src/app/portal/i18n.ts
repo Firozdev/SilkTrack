@@ -314,6 +314,9 @@ const en = {
   qaRequiredHint: "We check your goods at our China warehouse after they arrive and send you the result with photos before shipping.",
   qaTitle: "QA test",
   qaWaiting: "Requested – we test your goods after they arrive at our China warehouse.",
+  paymentSentStep: "Payment sent",
+  paymentConfirmedStep: "Payment confirmed",
+  paymentWaitingStep: "waiting for confirmation",
 };
 
 export type Dict = typeof en;
@@ -610,6 +613,9 @@ const bn: Dict = {
   qaRequiredHint: "আপনার মাল আমাদের চীনের ওয়্যারহাউসে পৌঁছানোর পর আমরা পরীক্ষা করব এবং শিপিংয়ের আগে ছবিসহ ফলাফল পাঠাব।",
   qaTitle: "QA টেস্ট",
   qaWaiting: "অনুরোধ করা হয়েছে – মাল চীনের ওয়্যারহাউসে পৌঁছানোর পর আমরা পরীক্ষা করব।",
+  paymentSentStep: "পেমেন্ট পাঠানো হয়েছে",
+  paymentConfirmedStep: "পেমেন্ট নিশ্চিত হয়েছে",
+  paymentWaitingStep: "নিশ্চিতকরণের অপেক্ষায়",
 };
 
 export const DICTS: Record<Lang, Dict> = { en, bn };
