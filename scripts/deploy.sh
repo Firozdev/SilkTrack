@@ -3,7 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BRANCH="${1:-production}"
-COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env"
+# Optional extra compose file from .env (e.g. deploy/docker-compose.npm.yml behind an existing proxy: no Caddy).
+EXTRA="$(grep -E '^COMPOSE_EXTRA=' .env | cut -d= -f2- | tr -d '"' || true)"
+COMPOSE="docker compose -f docker-compose.prod.yml ${EXTRA:+-f $EXTRA} --env-file .env"
+WEB="app caddy"
+[ -n "$EXTRA" ] && WEB="app"
 
 git fetch origin "$BRANCH"
 git checkout -q "$BRANCH"
@@ -13,5 +17,5 @@ echo "Deploying $(git log -1 --format='%h %s')"
 $COMPOSE build app migrate
 $COMPOSE up -d postgres
 $COMPOSE run --rm migrate
-$COMPOSE up -d app caddy
+$COMPOSE up -d $WEB
 $COMPOSE ps

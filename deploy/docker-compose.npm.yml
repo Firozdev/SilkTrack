@@ -1,0 +1,12 @@
+# For a server where Nginx Proxy Manager (or another proxy) already owns ports
+# 80/443: no Caddy; the app joins the proxy's Docker network as "silktrack-app"
+# (forward the domain to http://silktrack-app:3000 in the proxy).
+# Enable with COMPOSE_EXTRA=deploy/docker-compose.npm.yml in .env.
+services:
+  app:
+    container_name: silktrack-app
+    networks: [default, proxy-network]
+
+networks:
+  proxy-network:
+    external: true
