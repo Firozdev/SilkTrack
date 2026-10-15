@@ -5,8 +5,9 @@ import { NotificationBell } from "@/components/notification-bell";
 import { portalLogoutAction, portalMarkAllReadAction, portalMarkReadAction, portalSetSoundAction } from "../actions";
 import { getDict } from "../lang";
 import { LangSwitch } from "../lang-switch";
+import { Logo } from "@/components/logo";
 
-export const metadata = { title: "SilkTrack customer portal" };
+export const metadata = { title: "SilkTruck customer portal" };
 
 export default async function PortalLayout({ children }: { children: ReactNode }) {
   const acc = await requirePortalAccount();
@@ -16,7 +17,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-2">
           <Link href="/portal" className="text-lg font-semibold text-gray-900">
-            {t.brand}
+            <Logo name={t.brand} />
           </Link>
           <nav className="flex flex-wrap items-center gap-1 text-sm">
             <Link href="/portal" className="rounded-md px-2 py-1 hover:bg-gray-100">

@@ -175,15 +175,15 @@ async function main() {
   const org = await prisma.setting.findUnique({ where: { key: "organization" } });
   const orgValue = (org?.value ?? {}) as Record<string, unknown>;
   if (!orgValue.phone) {
-    const value = { name: "SilkTrack", tagline: "China sourcing & shipping to your door", phone: "+880 1700-000000", email: "hello@silktrack.test", website: "www.silktrack.test", address: "House 12, Road 5, Gulshan-1\nDhaka 1212, Bangladesh", logo: orgValue.logo ?? null };
+    const value = { name: "SilkTruck", tagline: "China sourcing & shipping to your door", phone: "+880 1700-000000", email: "hello@silktrack.test", website: "www.silktrack.test", address: "House 12, Road 5, Gulshan-1\nDhaka 1212, Bangladesh", logo: orgValue.logo ?? null };
     await prisma.setting.upsert({ where: { key: "organization" }, update: { value }, create: { key: "organization", value, description: "Organization details for PDFs" } });
   }
   if ((await prisma.paymentAccount.count()) === 0) {
     await prisma.paymentAccount.createMany({
       data: [
-        { type: "BANK", providerName: "Dutch-Bangla Bank PLC", accountName: "SilkTrack Trading", accountNumber: "123.110.0045678", branch: "Gulshan", routingNumber: "090261726", sortOrder: 1, showOnPdf: true },
-        { type: "MOBILE_BANKING", providerName: "bKash", accountName: "SilkTrack", accountNumber: "01700-000000", notes: "Merchant – choose Payment and use your order number as reference", sortOrder: 2, showOnPdf: true },
-        { type: "MOBILE_BANKING", providerName: "Nagad", accountName: "SilkTrack", accountNumber: "01800-000000", notes: "Hidden from PDFs (demo of the toggle)", sortOrder: 3, showOnPdf: false },
+        { type: "BANK", providerName: "Dutch-Bangla Bank PLC", accountName: "SilkTruck Trading", accountNumber: "123.110.0045678", branch: "Gulshan", routingNumber: "090261726", sortOrder: 1, showOnPdf: true },
+        { type: "MOBILE_BANKING", providerName: "bKash", accountName: "SilkTruck", accountNumber: "01700-000000", notes: "Merchant – choose Payment and use your order number as reference", sortOrder: 2, showOnPdf: true },
+        { type: "MOBILE_BANKING", providerName: "Nagad", accountName: "SilkTruck", accountNumber: "01800-000000", notes: "Hidden from PDFs (demo of the toggle)", sortOrder: 3, showOnPdf: false },
       ],
     });
   }

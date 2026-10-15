@@ -391,7 +391,7 @@ export function sampleInvoiceMessage(
   if (a.onDelivery.gt(0)) lines.push(`• Product (before purchase): ৳${a.beforePurchase.toFixed(2)}`, `• Shipping to Bangladesh (on delivery): ৳${a.onDelivery.toFixed(2)}`);
   if (a.paid.gt(0)) lines.push(`Paid so far: ৳${a.paid.toFixed(2)}. Balance due: ৳${a.balance.toFixed(2)}.`);
   else lines.push(s.paymentRequired ? `Please pay ৳${a.beforePurchase.toFixed(2)} so we can buy the sample${a.onDelivery.gt(0) ? "; the shipping is paid on delivery" : ""}.` : "We are buying the sample now; please pay when convenient.");
-  lines.push("Payment: bKash / Nagad / bank transfer. – SilkTrack");
+  lines.push("Payment: bKash / Nagad / bank transfer. – SilkTruck");
   return lines.join("\n");
 }
 

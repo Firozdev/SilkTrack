@@ -9,6 +9,7 @@ import { fmtRate } from "@/lib/format";
 import { fmtDay } from "@/lib/dates";
 import { logout } from "./actions";
 import { markAllReadAction, markReadAction, setSoundAction } from "./notifications/actions";
+import { Logo } from "@/components/logo";
 
 const ROLE_LABEL = { ADMIN: "Admin", CS: "CS · Bangladesh", PURCHASE: "Purchase · China" } as const;
 
@@ -34,7 +35,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     <div className="flex h-dvh flex-col overflow-hidden bg-gray-50 print:block print:h-auto print:overflow-visible print:bg-white">
       <header className="no-print flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-2">
         <Link href="/" className="text-lg font-semibold text-gray-900">
-          SilkTrack
+          <Logo />
         </Link>
         <div className="flex items-center gap-3 text-sm">
           <span className="hidden text-gray-500 sm:inline">

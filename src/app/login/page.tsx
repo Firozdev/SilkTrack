@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { LoginForm } from "./login-form";
+import { Logo } from "@/components/logo";
 
-export const metadata = { title: "Sign in · SilkTrack" };
+export const metadata = { title: "Sign in · SilkTruck" };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   // Checked against the database (not just the cookie) so a deactivated
@@ -12,7 +13,9 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <main className="flex flex-1 items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
-        <h1 className="mb-1 text-2xl font-semibold">SilkTrack</h1>
+        <h1 className="mb-1 text-2xl font-semibold">
+          <Logo size={32} />
+        </h1>
         <p className="mb-6 text-sm text-gray-500">Sign in to continue</p>
         <LoginForm callbackUrl={typeof callbackUrl === "string" ? callbackUrl : undefined} />
       </div>

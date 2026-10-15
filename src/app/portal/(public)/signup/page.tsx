@@ -6,7 +6,7 @@ import { portalSignUpAction } from "../../actions";
 import { fill } from "../../i18n";
 import { getDict } from "../../lang";
 
-export const metadata = { title: "Sign up · SilkTrack customer portal" };
+export const metadata = { title: "Sign up · SilkTruck customer portal" };
 
 export default async function PortalSignUpPage() {
   const { t } = await getDict();

@@ -1,4 +1,4 @@
-# SilkTrack
+# SilkTruck
 
 China Sourcing & Shipment Management App. Spec: `docs/requirements.md`. Rules: `CLAUDE.md`.
 
