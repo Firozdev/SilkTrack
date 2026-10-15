@@ -74,6 +74,9 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
   const pdfs = showMoney && can(user.role, "invoice:view") && raw.invoicedAt ? await documentVersions("SHIPPING_INVOICE", { shippingOrderId: raw.id }) : null;
   const china = can(user.role, "receiving:edit");
   const bd = can(user.role, "request:edit");
+  // Receiving in Bangladesh and delivery: CS or the BD warehouse.
+  const bdReceive = bd || can(user.role, "bdReceiving:edit");
+  const bdDeliver = bd || can(user.role, "delivery:edit");
   const hid = <input type="hidden" name="id" value={s.id} />;
   const closed = s.status === "DELIVERED" || s.status === "CANCELLED";
   const held = s.status === "ON_HOLD";
@@ -283,7 +286,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
               state={s.receivedBdAt ? "done" : active && st === "IN_SHIPMENT" ? "current" : "todo"}
               summary={s.receivedBdAt ? fmtDateTime(s.receivedBdAt, user.timezone) : st === "IN_SHIPMENT" ? `ETA ${fmtDay(s.shipment?.etaBd)}` : undefined}
             >
-              {bd && active && st === "IN_SHIPMENT" ? (
+              {bdReceive && active && st === "IN_SHIPMENT" ? (
                 <ActionForm action={receiveBdAction} submitLabel="Received in Bangladesh">
                   {hid}
                 </ActionForm>
@@ -390,7 +393,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
                       : undefined
               }
             >
-              {bd && active && st === "READY_FOR_DELIVERY" ? (
+              {bdDeliver && active && st === "READY_FOR_DELIVERY" ? (
                 <ActionForm action={dispatchAction} submitLabel="Out for delivery" inline>
                   {hid}
                   <p className="w-full text-xs text-gray-500">
@@ -406,7 +409,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
                   </select>
                   <input name="trackingNo" placeholder="Courier tracking no." className={`${inputCls} max-w-[12rem]`} />
                 </ActionForm>
-              ) : bd && active && st === "OUT_FOR_DELIVERY" ? (
+              ) : bdDeliver && active && st === "OUT_FOR_DELIVERY" ? (
                 <ActionForm action={deliverAction} submitLabel="Delivered">
                   {hid}
                   <div className="grid gap-2 sm:grid-cols-2">

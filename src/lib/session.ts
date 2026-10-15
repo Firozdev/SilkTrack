@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { assertCan, can, type Action } from "@/lib/permissions";
+import { canOpenSection, type Section } from "./navigation";
 
 /**
  * The signed-in user, re-read from the database so that deactivation and
@@ -38,5 +39,12 @@ export async function requirePermission(action: Action): Promise<CurrentUser> {
 export async function requirePagePermission(action: Action): Promise<CurrentUser> {
   const user = await requireUser();
   if (!can(user.role, action)) redirect("/denied");
+  return user;
+}
+
+/** Whole sections some roles don't use (e.g. the BD warehouse: quotations, purchasing, settings). */
+export async function requireSection(section: Section): Promise<CurrentUser> {
+  const user = await requireUser();
+  if (!canOpenSection(user.role, section)) redirect("/denied");
   return user;
 }

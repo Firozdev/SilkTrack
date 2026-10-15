@@ -4,7 +4,7 @@ import { fmtDateTime, fmtDay } from "@/lib/dates";
 import { docNo, fmtBdt } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
-import { adminInbox, bdDashboard, chinaDashboard, managementDashboard, ordersByStatus } from "@/server/dashboard";
+import { adminInbox, bdDashboard, chinaDashboard, managementDashboard, ordersByStatus, warehouseDashboard } from "@/server/dashboard";
 import { getCurrentRate } from "@/server/rates";
 
 const days = (n: number | null) => (n === null ? "—" : `${n.toFixed(1)} days`);
@@ -15,18 +15,20 @@ export default async function Dashboard() {
   const showBd = user.role === "CS" || isAdmin;
   const showChina = user.role === "PURCHASE" || isAdmin;
 
-  const [inbox, statusRows, bd, china, mgmt, { isToday }] = await Promise.all([
+  const showWarehouse = user.role === "BD_WAREHOUSE" || isAdmin;
+  const [inbox, statusRows, bd, china, mgmt, { isToday }, wh] = await Promise.all([
     can(user.role, "dashboard:adminInbox") ? adminInbox(user) : null,
     ordersByStatus(),
     showBd ? bdDashboard() : null,
     showChina ? chinaDashboard() : null,
     isAdmin && can(user.role, "report:profit") ? managementDashboard() : null,
     getCurrentRate(),
+    showWarehouse ? warehouseDashboard() : null,
   ]);
 
   return (
     <>
-      <PageHeader title={`Hello, ${user.name}`} subtitle={isAdmin ? "Management, Bangladesh and China overview" : user.role === "CS" ? "Bangladesh team dashboard" : "China team dashboard"} />
+      <PageHeader title={`Hello, ${user.name}`} subtitle={isAdmin ? "Management, Bangladesh and China overview" : user.role === "CS" ? "Bangladesh team dashboard" : user.role === "BD_WAREHOUSE" ? "Bangladesh warehouse dashboard" : "China team dashboard"} />
 
       {inbox && (
         <section className="mb-6 space-y-3">
@@ -125,6 +127,24 @@ export default async function Dashboard() {
             <StatTile label="Upfront payments to collect" value={bd.upfrontRequested} hint="requested by China" href="/requests" tone={bd.upfrontRequested ? "attention" : "default"} />
             <StatTile label="Price changes to approve" value={bd.priceApprovals} href="/purchasing" tone={bd.priceApprovals ? "attention" : "default"} />
             <StatTile label="Balances to collect" value={fmtBdt(bd.balanceToCollect)} hint={`${bd.invoicesOpen} open invoice(s)`} />
+          </TileRow>
+        </section>
+      )}
+
+      {wh && (
+        <section className="mb-6 space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Bangladesh warehouse</h2>
+          <TileRow>
+            <StatTile label="Shipments on the way" value={wh.onTheWay} hint="departed / in transit" href="/shipments" />
+            <StatTile label="Shipments in Bangladesh" value={wh.arrived} hint="arrived / customs cleared" href="/shipments" tone={wh.arrived ? "attention" : "default"} />
+            <StatTile label="Orders on the way" value={wh.ordersInTransit} href="/requests?st=IN_TRANSIT" />
+            <StatTile label="Bangladesh received" value={wh.ordersReceived} hint="customs clearance next" href="/requests?st=ARRIVED_BD" tone={wh.ordersReceived ? "attention" : "default"} />
+            <StatTile label="Customs cleared" value={wh.ordersCustoms} hint="waiting for invoice / payment" href="/requests?st=CUSTOMS_CLEARED" />
+            <StatTile label="Ready for home delivery" value={wh.ordersReady} hint="dispatch to courier" href="/requests?st=READY_FOR_DELIVERY" tone={wh.ordersReady ? "attention" : "default"} />
+            <StatTile label="Out for delivery" value={wh.ordersOut} href="/requests?st=OUT_FOR_DELIVERY" />
+            <StatTile label="Ship for Me to receive" value={wh.shippingToReceive} hint="in a shipment" href="/shipping-orders?status=IN_SHIPMENT" />
+            <StatTile label="Ship for Me ready to dispatch" value={wh.shippingReady} href="/shipping-orders?status=READY_FOR_DELIVERY" tone={wh.shippingReady ? "attention" : "default"} />
+            <StatTile label="Ship for Me out for delivery" value={wh.shippingOut} href="/shipping-orders?status=OUT_FOR_DELIVERY" />
           </TileRow>
         </section>
       )}

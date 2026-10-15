@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { SHIPMENT_FLOW, capacityWarning, isAccepting } from "@/server/shipments";
 import { bulkStageAction, detailsAction, freightAction, statusAction } from "../actions";
-import { BD_STAGES, STAGE_LABEL } from "@/lib/order-stages";
+import { BD_STAGES, STAGE_LABEL, stagePermission } from "@/lib/order-stages";
 
 export default async function ShipmentPage({ params }: PageProps<"/shipments/[id]">) {
   const user = await requireUser();
@@ -30,7 +30,8 @@ export default async function ShipmentPage({ params }: PageProps<"/shipments/[id
   if (!s) notFound();
   const canEdit = can(user.role, "shipment:edit");
   const idx = SHIPMENT_FLOW.indexOf(s.status);
-  const next = SHIPMENT_FLOW.slice(idx + 1).filter((st) => st !== "UPCOMING" && (can(user.role, "bdReceiving:edit") || SHIPMENT_FLOW.indexOf(st) < SHIPMENT_FLOW.indexOf("ARRIVED_BD")));
+  // Loading → departure: China team / Admin; arrival in Bangladesh onwards: BD Warehouse / Admin.
+  const next = SHIPMENT_FLOW.slice(idx + 1).filter((st) => st !== "UPCOMING" && (SHIPMENT_FLOW.indexOf(st) < SHIPMENT_FLOW.indexOf("ARRIVED_BD") ? canEdit : can(user.role, "bdReceiving:edit")));
   const warning = capacityWarning(s);
   const cutoffPassed = (s.status === "OPEN" || s.status === "UPCOMING") && !isAccepting(s);
 
@@ -159,7 +160,7 @@ export default async function ShipmentPage({ params }: PageProps<"/shipments/[id
               ]}
             />
           </Card>
-          {canEdit && next.length > 0 && (
+          {next.length > 0 && (
             <Card title="Update status">
               <p className="mb-2 text-xs text-gray-500">Every order line in this shipment is updated at once.</p>
               <ActionForm action={statusAction} submitLabel="Update" inline>
@@ -174,13 +175,13 @@ export default async function ShipmentPage({ params }: PageProps<"/shipments/[id
               </ActionForm>
             </Card>
           )}
-          {can(user.role, "bdReceiving:edit") && s.itemCount > 0 && (
+          {(can(user.role, "bdReceiving:edit") || can(user.role, "invoice:edit")) && s.itemCount > 0 && (
             <Card title="Orders: Bangladesh stages">
               <p className="mb-2 text-xs text-gray-500">Moves every Buy for Me order in this shipment forward to the chosen status. Orders already there are skipped; Ready for home delivery and later need the customer payment collected first.</p>
               <ActionForm action={bulkStageAction} submitLabel="Update all orders" inline>
                 <input type="hidden" name="id" value={s.id} />
                 <select name="stage" aria-label="Order status" className={`${inputCls} max-w-[18rem]`}>
-                  {BD_STAGES.map((st) => (
+                  {BD_STAGES.filter((st) => can(user.role, stagePermission(st))).map((st) => (
                     <option key={st} value={st}>
                       {STAGE_LABEL[st]}
                     </option>

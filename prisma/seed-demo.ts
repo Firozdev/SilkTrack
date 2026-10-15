@@ -169,6 +169,7 @@ async function main() {
   // built from the same rules and templates the app uses.
   await staffUser("cs.demo@silktrack.test", "Demo CS", "CS", "Asia/Dhaka");
   await staffUser("china.demo@silktrack.test", "Demo China", "PURCHASE", "Asia/Shanghai");
+  await staffUser("bd.demo@silktrack.test", "Demo BD Warehouse", "BD_WAREHOUSE", "Asia/Dhaka");
   await staffUser("admin.demo@silktrack.test", "Demo Admin", "ADMIN", "Asia/Dhaka");
 
   // Organization details and payment accounts for PDFs (Settings → Organization / Payment information).
@@ -251,6 +252,7 @@ async function main() {
   console.log(`Agent portal login:    mobile ${AGENT_PHONE} / password ${AGENT_PASSWORD}`);
   console.log(`CS login:    cs.demo@silktrack.test / ${STAFF_PASSWORD}`);
   console.log(`China login: china.demo@silktrack.test / ${STAFF_PASSWORD}`);
+  console.log(`BD Warehouse login: bd.demo@silktrack.test / ${STAFF_PASSWORD}`);
   console.log(`Admin login: admin.demo@silktrack.test / ${STAFF_PASSWORD} (local demo only)`);
   console.log("Every role now has a few unread demo notifications.");
   // A Buy for Me order in this week's Air shipment: move it through the Bangladesh stages

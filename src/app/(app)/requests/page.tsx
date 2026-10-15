@@ -7,6 +7,8 @@ import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { awaitingQuoteWhere, chinaInbox } from "@/server/requests";
+import { ORDER_FLOW } from "@/server/status";
+import type { OrderStatus } from "@/generated/prisma/client";
 
 const REQUEST_STATUSES = ["NEW", "SAMPLING", "QUOTED", "CUSTOMER_APPROVED", "REJECTED", "CANCELLED"] as const;
 /** Not a status: requests still waiting for China's quotation (the dashboard's Buy for Me panel). */
@@ -18,11 +20,14 @@ export default async function RequestsPage({ searchParams }: PageProps<"/request
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const rs = typeof sp.rs === "string" && ([...REQUEST_STATUSES, AWAITING_QUOTE] as readonly string[]).includes(sp.rs) ? sp.rs : "";
   const type = sp.type === "SINGLE" || sp.type === "BULK" ? sp.type : "";
+  // Order status (e.g. the BD warehouse dashboard's "Bangladesh received" tile).
+  const st = typeof sp.st === "string" && (ORDER_FLOW as readonly string[]).includes(sp.st) ? (sp.st as OrderStatus) : null;
 
   const where: Prisma.OrderWhereInput = {};
   if (rs === AWAITING_QUOTE) Object.assign(where, awaitingQuoteWhere);
   else if (rs) where.requestStatus = rs as (typeof REQUEST_STATUSES)[number];
   if (type) where.type = type;
+  if (st) where.status = st;
   if (q) {
     const n = parseDocNo(q);
     where.OR = [

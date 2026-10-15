@@ -10,8 +10,8 @@ import { fmtDay } from "@/lib/dates";
 import { logout } from "./actions";
 import { markAllReadAction, markReadAction, setSoundAction } from "./notifications/actions";
 import { Logo } from "@/components/logo";
+import { ROLE_LABEL } from "@/lib/roles";
 
-const ROLE_LABEL = { ADMIN: "Admin", CS: "CS · Bangladesh", PURCHASE: "Purchase · China" } as const;
 
 const BELL: BellLabels = {
   notifications: "Notifications",
