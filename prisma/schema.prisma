@@ -1,4 +1,4 @@
-// SilkTrack – data model for every module in docs/requirements.md.
+// SilkTruck – data model for every module in docs/requirements.md.
 //
 // Conventions
 // - `id` is a cuid; `number` is a human-friendly sequence shown with a prefix

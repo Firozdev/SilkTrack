@@ -543,7 +543,7 @@ export function shippingInvoiceMessage(s: InvoiceFields, customerName: string, p
   if (D(s.discountBdt).gt(0)) lines.push(`• Discount: −৳${D(s.discountBdt).toFixed(2)}`);
   lines.push(`Total: ৳${total.toFixed(2)}.`);
   if (paid.gt(0)) lines.push(`Paid: ৳${paid.toFixed(2)}. Balance due: ৳${total.sub(paid).toFixed(2)}.`);
-  lines.push("Please pay so we can deliver to your address. Payment: bKash / Nagad / bank transfer. – SilkTrack");
+  lines.push("Please pay so we can deliver to your address. Payment: bKash / Nagad / bank transfer. – SilkTruck");
   return lines.join("\n");
 }
 

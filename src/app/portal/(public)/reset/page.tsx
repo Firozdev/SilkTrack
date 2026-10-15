@@ -7,7 +7,7 @@ import { portalResetAction } from "../../actions";
 import { fill } from "../../i18n";
 import { getDict } from "../../lang";
 
-export const metadata = { title: "New password · SilkTrack customer portal", referrer: "no-referrer" };
+export const metadata = { title: "New password · SilkTruck customer portal", referrer: "no-referrer" };
 
 export default async function PortalResetPage({ searchParams }: PageProps<"/portal/reset">) {
   const { t } = await getDict();

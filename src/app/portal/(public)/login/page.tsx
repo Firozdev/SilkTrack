@@ -6,7 +6,7 @@ import { getPortalAccount } from "@/lib/portal-session";
 import { portalLoginAction } from "../../actions";
 import { getDict } from "../../lang";
 
-export const metadata = { title: "Log in · SilkTrack customer portal" };
+export const metadata = { title: "Log in · SilkTruck customer portal" };
 
 export default async function PortalLoginPage() {
   if (await getPortalAccount()) redirect("/portal");

@@ -43,7 +43,7 @@ export const resetLinkAction = formAction(async (fd) => {
   const token = await createResetToken(user, id);
   const acc = await prisma.portalAccount.findUniqueOrThrow({ where: { id }, select: { phone: true, name: true } });
   const url = `${await origin()}/portal/reset?token=${token}`;
-  const text = `Dear ${acc.name}, set a new password for your SilkTrack account here (valid 24 hours, one use): ${url}`;
+  const text = `Dear ${acc.name}, set a new password for your SilkTruck account here (valid 24 hours, one use): ${url}`;
   return {
     ok: true,
     message: "Reset link created. Send it to the customer only – anyone with it can set the password.",
@@ -59,7 +59,7 @@ export const inviteAction = formAction(async (fd) => {
   const { customerId } = z.object({ customerId: z.string().min(1) }).parse(fields(fd));
   const inv = await inviteCustomer(user, customerId);
   const url = `${await origin()}/portal/invite?token=${inv.token}`;
-  const text = `Dear ${inv.name}, you can now track your orders, shipments and bills online. Set your password here (valid 7 days, one use): ${url} – then log in with your mobile number ${inv.phone}. SilkTrack`;
+  const text = `Dear ${inv.name}, you can now track your orders, shipments and bills online. Set your password here (valid 7 days, one use): ${url} – then log in with your mobile number ${inv.phone}. SilkTruck`;
   revalidatePath("/customers", "layout");
   return {
     ok: true,

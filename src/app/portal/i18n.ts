@@ -7,7 +7,7 @@ export type Lang = "en" | "bn";
 export const LANG_COOKIE = "st_lang";
 
 const en = {
-  brand: "SilkTrack",
+  brand: "SilkTruck",
   tagline: "Customer portal – buy and ship from China",
   language: "বাংলা",
 
@@ -322,7 +322,7 @@ const en = {
 export type Dict = typeof en;
 
 const bn: Dict = {
-  brand: "SilkTrack",
+  brand: "SilkTruck",
   tagline: "কাস্টমার পোর্টাল – চীন থেকে কেনা ও শিপিং",
   language: "English",
 

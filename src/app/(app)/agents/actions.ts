@@ -11,7 +11,7 @@ import { assignAgent, createAgent, reinviteAgent } from "@/server/agents";
 
 async function inviteLinks(acc: { name: string; phone: string }, token: string) {
   const url = `${await origin()}/portal/invite?token=${token}`;
-  const text = `Dear ${acc.name}, your SilkTrack agent login is ready. Set your password here (valid 7 days, one use): ${url} – then log in with your mobile number ${acc.phone} to order for your customers. SilkTrack`;
+  const text = `Dear ${acc.name}, your SilkTruck agent login is ready. Set your password here (valid 7 days, one use): ${url} – then log in with your mobile number ${acc.phone} to order for your customers. SilkTruck`;
   return [
     { href: whatsappLink(acc.phone, text), label: "💬 Send by WhatsApp" },
     { href: url, label: url },

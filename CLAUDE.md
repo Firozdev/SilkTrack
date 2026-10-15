@@ -1,4 +1,4 @@
-# SilkTrack – China sourcing & shipment app
+# SilkTruck – China sourcing & shipment app
 
 Internal web app to take customer product requests in Bangladesh, buy them in China,
 consolidate them into weekly shipments, and deliver to the customer's home.

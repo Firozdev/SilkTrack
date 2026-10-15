@@ -8,7 +8,7 @@ import { portalAcceptInviteAction } from "../../actions";
 import { fill } from "../../i18n";
 import { getDict } from "../../lang";
 
-export const metadata = { title: "Welcome · SilkTrack customer portal", referrer: "no-referrer" };
+export const metadata = { title: "Welcome · SilkTruck customer portal", referrer: "no-referrer" };
 
 export default async function PortalInvitePage({ searchParams }: PageProps<"/portal/invite">) {
   const { t } = await getDict();
