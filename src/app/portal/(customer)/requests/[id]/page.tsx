@@ -13,7 +13,8 @@ import { portalQuoteAction } from "../../../actions";
 import { fill } from "../../../i18n";
 import { portalLabel } from "../../../labels";
 import { getDict } from "../../../lang";
-import { PStatus, Timeline } from "../../../portal-ui";
+import { PStatus, Timeline, type TimelineEvent } from "../../../portal-ui";
+import { paymentSteps } from "@/lib/payment-timeline";
 import { FilesCard } from "../../upload-box";
 import { EditBar } from "../../edit-bar";
 import { portalRequestEditable } from "@/lib/editability";
@@ -34,6 +35,26 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
   const expired = !!q && q.validUntil < today(BD_TZ);
   const files = o.attachments.filter((f) => f.kind !== "QA_PHOTO");
   const qaPhotos = o.attachments.filter((f) => f.kind === "QA_PHOTO");
+  // Payment sent / confirmed steps in the tracking timeline (one product per order, so each card shows them).
+  const payments = paymentSteps(o.payments, o.paymentSubmissions).map(
+    (p): TimelineEvent => ({
+      id: p.id,
+      status: null,
+      occurredAt: p.at,
+      dayOnly: p.dayOnly,
+      dot: p.waiting ? "waiting" : "payment",
+      note: (
+        <>
+          <b>{p.step === "SENT" ? t.paymentSentStep : t.paymentConfirmedStep}</b> · {fmtBdt(p.amountBdt)}
+          <span className="text-gray-500">
+            {" "}
+            · {[p.type && portalLabel(p.type, lang), portalLabel(p.method, lang)].filter(Boolean).join(" · ")}
+            {p.waiting && <> · {t.paymentWaitingStep}</>}
+          </span>
+        </>
+      ),
+    }),
+  );
   return (
     <div className="space-y-5">
       <div>
@@ -134,12 +155,17 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
           <Timeline
             tz={BD_TZ}
             lang={lang}
-            events={l.trackingEvents.map((e) => ({
-              id: e.id,
-              status: e.status,
-              occurredAt: e.occurredAt,
-              note: <span className="text-gray-500">{[e.shipment?.code, e.courier, e.trackingNo].filter(Boolean).join(" · ")}</span>,
-            }))}
+            events={[
+              ...l.trackingEvents.map(
+                (e): TimelineEvent => ({
+                  id: e.id,
+                  status: e.status,
+                  occurredAt: e.occurredAt,
+                  note: <span className="text-gray-500">{[e.shipment?.code, e.courier, e.trackingNo].filter(Boolean).join(" · ")}</span>,
+                }),
+              ),
+              ...payments,
+            ].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())}
           />
         </Card>
       ))}

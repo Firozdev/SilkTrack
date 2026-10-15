@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { fmtDateTime } from "@/lib/dates";
+import { fmtDateTime, fmtDay } from "@/lib/dates";
 import type { Lang } from "./i18n";
 import { portalLabel } from "./labels";
 
@@ -18,14 +18,16 @@ export function PStatus({ value, lang }: { value: string; lang: Lang }) {
   return <span className={`inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}>{portalLabel(value, lang)}</span>;
 }
 
+export type TimelineEvent = { id: string; status: string | null; occurredAt: Date; note?: ReactNode; dayOnly?: boolean; dot?: "payment" | "waiting" };
+
 /** Status timeline: one row per status change, newest last. */
-export function Timeline({ events, tz, lang }: { events: { id: string; status: string | null; occurredAt: Date; note?: ReactNode }[]; tz: string; lang: Lang }) {
+export function Timeline({ events, tz, lang }: { events: TimelineEvent[]; tz: string; lang: Lang }) {
   return (
     <ol className="space-y-2 border-l border-gray-200 pl-4">
       {events.map((e) => (
         <li key={e.id} className="relative text-sm">
-          <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-blue-500" />
-          <div className="text-xs text-gray-500">{fmtDateTime(e.occurredAt, tz)}</div>
+          <span className={`absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full ${e.dot === "payment" ? "bg-green-500" : e.dot === "waiting" ? "bg-amber-400" : "bg-blue-500"}`} />
+          <div className="text-xs text-gray-500">{e.dayOnly ? fmtDay(e.occurredAt) : fmtDateTime(e.occurredAt, tz)}</div>
           <div>
             {e.status && <b>{portalLabel(e.status, lang)}</b>} {e.note}
           </div>

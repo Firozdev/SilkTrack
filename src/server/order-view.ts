@@ -25,6 +25,7 @@ export async function getOrderView(orderId: string, viewer: Viewer) {
       },
       comments: { orderBy: { createdAt: "asc" }, include: { author: { select: { name: true, role: true } }, attachments: att } },
       payments: { orderBy: { paidAt: "asc" }, include: { receivedBy: { select: { name: true } } } },
+      paymentSubmissions: { where: { status: "PENDING" }, select: { id: true, amountBdt: true, method: true, paidAt: true, status: true } },
       estimates: { orderBy: { version: "desc" }, select: { id: true, number: true, version: true, status: true, validUntil: true, grandTotalBdt: true, totalRmb: true } },
       samples: { orderBy: { requestedAt: "desc" }, include: { lines: true } },
       invoices: { orderBy: { createdAt: "desc" } },

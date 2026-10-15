@@ -142,7 +142,7 @@ export async function portalOrder(customerId: string, orderId: string) {
         orderBy: { number: "asc" },
         select: { id: true, number: true, status: true, totalBdt: true, advancePaidBdt: true, balanceDueBdt: true, issuedAt: true },
       },
-      payments: { orderBy: { paidAt: "asc" }, select: { id: true, type: true, amountBdt: true, method: true, paidAt: true } },
+      payments: { orderBy: { paidAt: "asc" }, select: { id: true, type: true, amountBdt: true, method: true, paidAt: true, createdAt: true } },
       deliveries: { orderBy: { createdAt: "asc" }, select: { id: true, status: true, courier: true, trackingNo: true, dispatchedAt: true, deliveredAt: true } },
       samples: { select: { id: true, number: true, status: true } },
       _count: { select: { estimates: true } },
