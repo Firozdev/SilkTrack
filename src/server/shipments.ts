@@ -5,7 +5,7 @@ import { assertCan, can } from "@/lib/permissions";
 import { UserError } from "@/lib/action";
 import { allocate, D, money, rmbToBdt, sum } from "@/lib/money";
 import { CN_TZ, addDays, isoWeek, isoWeekStart, today } from "@/lib/dates";
-import { docNo } from "@/lib/format";
+import { docNo, humanize } from "@/lib/format";
 import { logChanges, diffFields } from "@/lib/audit";
 import { queueCustomerMessage } from "@/lib/notify";
 import { notify } from "./notify";
@@ -102,9 +102,8 @@ export async function assignToShipment(tx: Tx, actorId: string, receivingId: str
   const qaWaiting = await qaBlockingOrders(tx, rec.lines.map((l) => l.orderLineId));
   if (qaWaiting.length) throw new UserError(qaBlockedMessage(qaWaiting));
   if (rec.shipment && !isAcceptingOrOpen(rec.shipment)) throw new UserError(`${rec.shipment.code} is already ${rec.shipment.status.toLowerCase()} – items can't be moved`);
-  const target = await tx.shipment.findUniqueOrThrow({ where: { id: shipmentId } });
-  if (target.method !== rec.shippingMethod) throw new UserError(`${target.code} is a ${target.method.toLowerCase()} shipment; this parcel ships by ${rec.shippingMethod.toLowerCase()}`);
-  if (!isAccepting(target, now)) throw new UserError(`${target.code} is not accepting items (status ${target.status.toLowerCase()} or cut-off passed)`);
+  const target = await tx.shipment.findUnique({ where: { id: shipmentId } });
+  checkTarget(target, rec.shippingMethod, "parcel", now);
 
   await tx.receiving.update({ where: { id: receivingId }, data: { shipmentId, status: "IN_SHIPMENT", freightShareBdt: null } });
   await logChanges(tx, { entityType: "Receiving", entityId: receivingId, userId: actorId, action: "UPDATE", changes: [{ field: "shipment", oldValue: rec.shipment?.code ?? null, newValue: target.code }] });
@@ -113,6 +112,22 @@ export async function assignToShipment(tx: Tx, actorId: string, receivingId: str
   if (rec.shipmentId && rec.shipmentId !== shipmentId) await recalcTotals(tx, rec.shipmentId);
   await setLineStatus(tx, rec.lines.map((l) => l.orderLineId), "IN_SHIPMENT", { actorId, message: `Added to shipment ${target.code}`, onlyForward: true, shipmentId });
   return tx.shipment.findUniqueOrThrow({ where: { id: shipmentId } });
+}
+
+/**
+ * The only shipments anything may be assigned to: same method (Air / Sea) and
+ * Open or Upcoming with its cut-off not passed. Every assignment path checks this.
+ */
+export function checkTarget<T extends { code: string; method: ShippingMethod; status: ShipmentStatus; cutoffDate: Date }>(
+  target: T | null,
+  method: ShippingMethod,
+  what: "parcel" | "order",
+  now = new Date(),
+): asserts target is T {
+  if (!target) throw new UserError("Shipment not found");
+  if (target.method !== method) throw new UserError(`${target.code} is a ${target.method.toLowerCase()} shipment; this ${what} ships by ${method.toLowerCase()}`);
+  if (target.status !== "OPEN" && target.status !== "UPCOMING") throw new UserError(`${target.code} is ${humanize(target.status).toLowerCase()} – only open or upcoming shipments take new items`);
+  if (!isAccepting(target, now)) throw new UserError(`${target.code} is past its cut-off – choose next week's shipment`);
 }
 
 function isAcceptingOrOpen(s: { status: ShipmentStatus }) {

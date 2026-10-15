@@ -12,7 +12,7 @@ import { generateReceipt, generateShippingInvoice, safely } from "./documents";
 import { portalShippingEditable } from "@/lib/editability";
 import { rateForConversion } from "./rates";
 import { liveRate, rateCardFor } from "./shipping-rates";
-import { capacityWarning, isAccepting, recalcTotals, suggestShipment } from "./shipments";
+import { capacityWarning, checkTarget, isAccepting, recalcTotals, suggestShipment } from "./shipments";
 import { findOrCreateCustomer, type CustomerInput, type PlacedBy } from "./requests";
 import type { Actor } from "./actor";
 
@@ -221,9 +221,7 @@ export async function assignShippingOrder(actor: Actor, id: string, shipmentId: 
   if (s.shipment && !isAccepting(s.shipment, now)) throw new UserError(`${s.shipment.code} is already ${s.shipment.status.toLowerCase()} – the order can't be moved`);
   const sh = await prisma.$transaction(async (tx) => {
     const target = shipmentId === "auto" ? await suggestShipment(tx, s.shippingMethod, now) : await tx.shipment.findUnique({ where: { id: shipmentId } });
-    if (!target) throw new UserError("Shipment not found");
-    if (target.method !== s.shippingMethod) throw new UserError(`${target.code} is a ${target.method.toLowerCase()} shipment; this order ships by ${s.shippingMethod.toLowerCase()}`);
-    if (!isAccepting(target, now)) throw new UserError(`${target.code} is not accepting items`);
+    checkTarget(target, s.shippingMethod, "order", now);
     if (target.id === s.shipmentId) return target;
     if (target.status === "UPCOMING") await tx.shipment.update({ where: { id: target.id }, data: { status: "OPEN" } });
     await logChanges(tx, { entityType: "ShippingOrder", entityId: id, userId: actor.id, action: "UPDATE", changes: [{ field: "shipment", oldValue: s.shipment?.code ?? null, newValue: target.code }] });
