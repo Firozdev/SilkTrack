@@ -10,6 +10,7 @@ import { sum } from "@/lib/money";
 import { can, canSeeSelling } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
 import { getOrderView } from "@/server/order-view";
+import { prisma } from "@/lib/prisma";
 import { isReleasedForPurchase } from "@/server/requests";
 import { requestSampleAction } from "../../samples/actions";
 import { CustomerPanel } from "../../customer-panel";
@@ -18,6 +19,7 @@ import {
   commentAction,
   headerAction,
   holdAction,
+  qaAction,
   paymentAction,
   resumeAction,
 } from "../actions";
@@ -27,6 +29,10 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
   const { id } = await params;
   const order = await getOrderView(id, user);
   if (!order) notFound();
+  const qaPhotos = order.qaRequested ? await prisma.attachment.findMany({ where: { orderId: order.id, kind: "QA_PHOTO" }, orderBy: { createdAt: "asc" }, select: { id: true, fileName: true, mimeType: true, uploadedByAccountId: true } }) : [];
+  const parcels = order.qaRequested ? await prisma.receiving.findMany({ where: { lines: { some: { orderLine: { orderId: order.id } } } }, select: { status: true, shipmentId: true } }) : [];
+  const received = parcels.length > 0;
+  const qaLocked = parcels.some((p) => p.shipmentId || p.status === "IN_SHIPMENT");
   const history = await recordHistory({ orderId: order.id }, "staff");
 
   const showSelling = canSeeSelling(user);
@@ -49,6 +55,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
         subtitle={
           <span className="flex flex-wrap items-center gap-2">
             <Badge value={order.requestStatus} /> <Badge value={order.status} />
+            {order.qaRequested && (order.qaResult === "FAILED" ? <Badge value="CANCELLED" label="⚠ QA failed" /> : <Badge value={order.qaResult ? "COMPLETED" : "PENDING"} label={order.qaResult ? "QA passed" : "QA test required"} />)}
             {order.samples.map((smp) => (
               <A key={smp.id} href={`/samples/${smp.id}`}>
                 {docNo("sample", smp.number)}
@@ -127,6 +134,44 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
               ))}
             </div>
           </Card>
+
+          {order.qaRequested && (
+            <Card title="QA test (customer asked for it)">
+              {order.qaResult ? (
+                <div className="mb-3 text-sm">
+                  <Badge value={order.qaResult === "PASSED" ? "COMPLETED" : "CANCELLED"} label={order.qaResult === "PASSED" ? "Passed" : "Failed"} />{" "}
+                  <span className="text-gray-500">
+                    {fmtDateTime(order.qaAt, user.timezone)}
+                    {order.qaBy ? ` · ${order.qaBy.name}` : ""}
+                  </span>
+                  {order.qaNotes && <p className="mt-1 whitespace-pre-line text-gray-700">{order.qaNotes}</p>}
+                  <Attachments items={qaPhotos} />
+                  {order.qaResult === "FAILED" && can(user.role, "settings:manage") && <p className="mt-2 text-sm text-red-700">QA failed – decide whether to ship anyway or put the order on hold.</p>}
+                </div>
+              ) : (
+                <p className="mb-3 text-sm text-gray-500">{received ? "Goods are at the China warehouse – record the QA test. They can't go into a shipment until it is recorded." : "The QA test is done after the goods arrive at the China warehouse."}</p>
+              )}
+              {can(user.role, "receiving:edit") && received && !qaLocked && (
+                <ActionForm action={qaAction} submitLabel={order.qaResult ? "Update QA result" : "Save QA result"}>
+                  {hidden}
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    <label className="flex items-center gap-1.5">
+                      <input type="radio" name="result" value="PASSED" required defaultChecked={order.qaResult === "PASSED"} /> Pass
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input type="radio" name="result" value="FAILED" defaultChecked={order.qaResult === "FAILED"} /> Fail
+                    </label>
+                  </div>
+                  <Field label="Notes">
+                    <textarea name="notes" rows={2} defaultValue={order.qaNotes ?? ""} className={inputCls} />
+                  </Field>
+                  <Field label="QA photos">
+                    <input type="file" name="photos" accept="image/*" multiple className="text-sm" />
+                  </Field>
+                </ActionForm>
+              )}
+            </Card>
+          )}
 
           <Card
             title="China quotation"

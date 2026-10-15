@@ -6,6 +6,7 @@ import { z } from "zod";
 import { formAction } from "@/lib/action";
 import { fields, files, rows, zBool, zDec, zDecOpt, zIntMin0, zIntPos, zStrOpt } from "@/lib/forms";
 import { splitLinks } from "@/lib/links";
+import { recordOrderQa } from "@/server/order-qa";
 import { requireUser } from "@/lib/session";
 import { saveAttachments, saveLineFiles } from "@/lib/uploads";
 import {
@@ -79,6 +80,12 @@ function simple(fn: (user: Awaited<ReturnType<typeof requireUser>>, orderId: str
     return { ok: true, message };
   });
 }
+
+/** China (or Admin) records the Buy for Me QA test: result, notes and photos. */
+export const qaAction = simple(async (u, id, fd) => {
+  const q = z.object({ result: z.enum(["PASSED", "FAILED"]), notes: zStrOpt }).parse(fields(fd));
+  await recordOrderQa(u, id, q, files(fd, "photos"));
+}, "QA result saved.");
 
 export const holdAction = simple((u, id) => setHold(u, id, true), "Order put on hold.");
 export const resumeAction = simple((u, id) => setHold(u, id, false), "Order resumed.");

@@ -9,7 +9,7 @@ import type { Dict } from "../../../i18n";
 import { CustomerPicker, type PickCustomer } from "../../customer-picker";
 
 export type RequestLineInit = { id: string; productName: string; color: string; size: string; quantity: number; notes: string; links: string; files: number };
-export type RequestInit = { id: string; shippingMethod: "AIR" | "SEA"; targetBudgetBdt: string; customerNotes: string; lines: RequestLineInit[] };
+export type RequestInit = { id: string; shippingMethod: "AIR" | "SEA"; qaRequested: boolean; targetBudgetBdt: string; customerNotes: string; lines: RequestLineInit[] };
 
 /** New request, or editing one (`initial` + `action`). Agents pass `customers` to choose who it is for. */
 export function PortalRequestForm({
@@ -97,6 +97,13 @@ export function PortalRequestForm({
             <input name="customerNotes" defaultValue={initial?.customerNotes} className={inputCls} />
           </Field>
         </div>
+        <label className="mt-3 flex items-start gap-2 text-sm text-gray-800">
+          <input type="checkbox" name="qaRequested" defaultChecked={initial?.qaRequested ?? false} className="mt-0.5 h-4 w-4" />
+          <span>
+            <span className="font-medium">{t.qaRequired}</span>
+            <span className="block text-xs text-gray-500">{t.qaRequiredHint}</span>
+          </span>
+        </label>
       </Card>
     </ActionForm>
   );

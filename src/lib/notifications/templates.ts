@@ -23,7 +23,7 @@ export const TEMPLATES: Record<EventType, T> = {
     a === "customer"
       ? { title: `Shipping order ${s(d.ref)} received`, body: "We will tell you when your parcels reach our China warehouse." }
       : { title: `New Ship for Me request: ${s(d.ref)}`, body: `${s(d.customer)} · ${s(d.items)} parcel(s) expected at the China warehouse${d.qa ? " – QA test requested" : ""}${opt(" · placed by agent ", d.agent)}.` },
-  QA_REQUESTED: (d) => ({ title: `QA test to do: ${s(d.ref)}`, body: "Test the goods when they arrive at the China warehouse and record the result." }),
+  QA_REQUESTED: (d) => ({ title: `QA test to do: ${s(d.ref)}`, body: "Test the goods at the China warehouse and record the result before shipping." }),
   PORTAL_REQUEST_EDITED: (d) => ({ title: `Customer changed request ${s(d.ref)}`, body: "Check the updated products before quoting." }),
   PORTAL_REQUEST_CANCELLED: (d) => ({ title: `Customer cancelled ${s(d.ref)}`, body: s(d.reason) || "No reason given." }),
   PORTAL_SHIPPING_EDITED: (d) => ({ title: `Customer changed ${s(d.ref)}`, body: "Products / tracking were updated." }),

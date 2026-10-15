@@ -367,6 +367,7 @@ model User {
   shippingOrders     ShippingOrder[]      @relation("ShippingOrderCreatedBy")
   shippingReceived   ShippingOrder[]      @relation("ShippingOrderReceivedBy")
   shippingQa         ShippingOrder[]      @relation("ShippingOrderQaBy")
+  ordersQa           Order[]              @relation("OrderQaBy")
   shippingInvoiced   ShippingOrder[]      @relation("ShippingOrderInvoicedBy")
   shippingEvents     ShippingOrderEvent[]
   portalReviews      PortalAccount[]      @relation("PortalAccountReviewedBy")
@@ -478,6 +479,13 @@ model Order {
   /// Portal login that submitted it (the customer or their agent). Null for staff-created.
   placedByAccountId    String?
   placedByAccount      PortalAccount? @relation("OrderPlacedBy", fields: [placedByAccountId], references: [id])
+  /// Customer asked for a QA test at the China warehouse (done after receiving, before shipping).
+  qaRequested          Boolean        @default(false)
+  qaResult             QaResult?
+  qaNotes              String?
+  qaById               String?
+  qaBy                 User?          @relation("OrderQaBy", fields: [qaById], references: [id])
+  qaAt                 DateTime?
   type                 OrderType      @default(SINGLE)
   /// True when CS overrode the auto-suggested type.
   typeOverridden       Boolean        @default(false)

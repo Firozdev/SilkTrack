@@ -19,7 +19,7 @@ import { quoteBreakdown } from "./quote-breakdown";
  * from our purchases, internal comment files, issues or claims.
  */
 const VISIBLE_FILE: Prisma.AttachmentWhereInput = { kind: { not: "SUPPLIER_INVOICE" }, commentId: null, issueId: null, claimId: null, supplierOrderId: null, receivingId: null };
-const fileSelect = { where: VISIBLE_FILE, orderBy: { createdAt: "asc" as const }, select: { id: true, fileName: true, mimeType: true, uploadedByAccountId: true } };
+const fileSelect = { where: VISIBLE_FILE, orderBy: { createdAt: "asc" as const }, select: { id: true, fileName: true, mimeType: true, kind: true, uploadedByAccountId: true } };
 
 /** The attachment if one of these customers (the login's own, or an agent's) may download it, else null. */
 export function portalAttachment(customerIds: string[], id: string) {
@@ -90,6 +90,10 @@ export async function portalOrder(customerId: string, orderId: string) {
       targetBudgetBdt: true,
       customerNotes: true,
       requestedAt: true,
+      qaRequested: true,
+      qaResult: true,
+      qaNotes: true,
+      qaAt: true,
       ...receiptSelect,
       paymentSubmissions: submissionSelect,
       attachments: fileSelect,

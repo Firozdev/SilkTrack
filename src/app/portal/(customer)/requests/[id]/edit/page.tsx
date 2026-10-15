@@ -34,6 +34,7 @@ export default async function PortalEditRequestPage({ params }: PageProps<"/port
           shippingMethod: o.shippingMethod,
           targetBudgetBdt: o.targetBudgetBdt?.toString() ?? "",
           customerNotes: o.customerNotes ?? "",
+          qaRequested: o.qaRequested,
           lines: o.lines
             .filter((l) => l.status !== "CANCELLED")
             .map((l) => ({
