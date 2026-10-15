@@ -120,6 +120,15 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
                     </ul>
                   )}
                   <Attachments items={l.attachments} />
+                  {(() => {
+                    const imgs = (order.estimates[0]?.attachments ?? []).filter((a) => a.estimateOrderLineId === l.id);
+                    return imgs.length ? (
+                      <div className="mt-2 text-xs text-gray-600">
+                        From China quotation (v{order.estimates[0].version}):
+                        <Attachments items={imgs} />
+                      </div>
+                    ) : null;
+                  })()}
                   <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600">
                     <span>Quoted: {fmtRmb(l.quotedUnitPriceRmb)} / pc</span>
                     {showSelling && "sellingPriceBdt" in l && <span>Selling (line): {fmtBdt(l.sellingPriceBdt as never)}</span>}

@@ -4,8 +4,11 @@ import { useState } from "react";
 import { ActionForm } from "@/components/action-form";
 import { Card, Field, inputCls } from "@/components/ui";
 import { saveQuotationAction } from "./actions";
+import { ScreenshotInput } from "../purchasing/screenshot-input";
 
-export type QLine = { id: string; lineNo: number; productName: string; variant: string; quantity: number; link?: string };
+const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
+
+export type QLine = { id: string; lineNo: number; productName: string; variant: string; quantity: number; link?: string; images: { id: string; fileName: string }[] };
 type LineVals = { unitPriceRmb: string; moq: string; unitWeightKg: string; cartonCount: string; lengthCm: string; widthCm: string; heightCm: string; sellingUnitBdt: string };
 export type QInitial = {
   shippingMethod: "AIR" | "SEA";
@@ -114,6 +117,25 @@ export function QuotationForm({ orderId, lines, initial, canSetSelling, rate }: 
                       <input name={nm("sellingUnitBdt")} value={v.sellingUnitBdt} onChange={(e) => setLine(l.id, "sellingUnitBdt", e.target.value)} inputMode="decimal" className={inputCls} />
                     </Field>
                   )}
+                </div>
+                <div className="mt-3 border-t border-gray-50 pt-2">
+                  <div className="mb-1 text-xs font-medium text-gray-600">Product images (optional – JPG, PNG or WebP; the customer sees them with the quote)</div>
+                  {l.images.length > 0 && (
+                    <ul className="mb-2 flex flex-wrap gap-2">
+                      {l.images.map((im) => (
+                        <li key={im.id} className="text-center">
+                          <a href={`/files/${im.id}`} target="_blank" rel="noreferrer">
+                            {/* eslint-disable-next-line @next/next/no-img-element -- stored quote image */}
+                            <img src={`/files/${im.id}`} alt={im.fileName} className="h-20 w-20 rounded border border-gray-200 object-cover" />
+                          </a>
+                          <label className="mt-0.5 flex items-center justify-center gap-1 text-[11px] text-gray-600">
+                            <input type="checkbox" name="removeImage" value={im.id} /> remove
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <ScreenshotInput name={`img.${l.id}`} accept={IMAGE_ACCEPT} />
                 </div>
               </div>
             );

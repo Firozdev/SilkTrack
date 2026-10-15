@@ -5,7 +5,7 @@ import type { DocumentKind, Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { D, sum } from "@/lib/money";
 import { docNo, humanize } from "@/lib/format";
-import { readAttachment, saveGeneratedPdf } from "@/lib/uploads";
+import { pdfSafeImage, readAttachment, saveGeneratedPdf } from "@/lib/uploads";
 import type { Item } from "@/lib/pdf/components";
 import { InvoicePdf, QuotePdf, ReceiptPdf, type Brand, type Customer } from "@/lib/pdf/documents";
 import { getDocumentBranding } from "./organization";
@@ -39,23 +39,27 @@ function render(element: ReactElement) {
 /** For on-the-fly PDFs (customer versions), with the same timeout. */
 export const renderPdf = render;
 
-/** Render with the logo; if the logo breaks rendering (damaged file), render again without it. */
-async function renderWithFallback(make: (b: Brand) => ReactElement) {
+/** Render with the logo (and product images); if they break rendering (damaged file), render again without them. */
+async function renderWithFallback(make: (b: Brand, images: boolean) => ReactElement) {
   const b = await brand();
   try {
-    return await render(make(b));
+    return await render(make(b, true));
   } catch (err) {
-    if (!b.logo) throw err;
-    console.error("PDF rendering failed with the logo – retrying without it", err);
-    return render(make({ ...b, logo: null }));
+    console.error("PDF rendering failed – retrying without the logo and images", err);
+    return render(make({ ...b, logo: null }, false));
   }
 }
 
-async function store(kind: DocumentKind, number: string, link: Link, make: (b: Brand) => ReactElement, actorId: string | null) {
+async function store(kind: DocumentKind, number: string, link: Link, make: (b: Brand, images: boolean) => ReactElement, actorId: string | null) {
   const pdf = await renderWithFallback(make);
   const storageKey = await saveGeneratedPdf(Buffer.from(pdf), number);
   const version = (await prisma.generatedDocument.count({ where: { kind, ...link } })) + 1;
   return prisma.generatedDocument.create({ data: { kind, number, version, storageKey, fileName: `${number}${version > 1 ? `-v${version}` : ""}.pdf`, createdById: actorId, ...link } });
+}
+
+async function readAttachmentById(id: string) {
+  const a = await prisma.attachment.findUnique({ where: { id }, select: { storageKey: true } });
+  return a ? readAttachment(a.storageKey).catch(() => null) : null;
 }
 
 const address = (c: { address: string; district?: string | null; area?: string | null }) => [c.address, c.area, c.district].filter(Boolean).join(", ");
@@ -155,7 +159,15 @@ export async function generateQuotePdf(estimateId: string, actorId: string | nul
   const qb = await quoteBreakdown(e);
   const number = `${docNo("estimate", e.number)} v${e.version}`;
   const air = e.shippingMethod === "AIR";
-  const element = (b: Brand) => (
+  // China's product images: up to 3 small ones per line; JPG / PNG only (what PDFs can embed), large files skipped.
+  const pics = new Map<string, Buffer[]>();
+  for (const a of e.attachments) {
+    const key = a.estimateOrderLineId ?? "";
+    if ((pics.get(key)?.length ?? 0) >= 3) continue;
+    const buf = await readAttachmentById(a.id);
+    if (buf && buf.length <= 4 * 1024 * 1024 && pdfSafeImage(buf)) pics.set(key, [...(pics.get(key) ?? []), buf]);
+  }
+  const element = (b: Brand, images: boolean) => (
     <QuotePdf
       brand={b}
       number={number}
@@ -163,7 +175,14 @@ export async function generateQuotePdf(estimateId: string, actorId: string | nul
       validUntil={e.validUntil}
       customer={{ name: e.order.customer.name, code: e.order.customer.code, phone: e.order.customer.phone, address: address(e.order.customer) }}
       refs={[["Request", docNo("order", e.order.number)], ["Shipping by", air ? "Air" : "Sea"]]}
-      items={e.lines.map((l, i) => ({ description: l.productName, detail: [l.orderLine?.color, l.orderLine?.size, l.orderLine?.model].filter(Boolean).join(" · ") || undefined, qty: String(l.quantity), unitPrice: qb.lines[i].unitPrice, amount: D(l.sellingPriceBdt) }))}
+      items={e.lines.map((l, i) => ({
+        description: l.productName,
+        detail: [l.orderLine?.color, l.orderLine?.size, l.orderLine?.model].filter(Boolean).join(" · ") || undefined,
+        qty: String(l.quantity),
+        unitPrice: qb.lines[i].unitPrice,
+        amount: D(l.sellingPriceBdt),
+        images: images ? pics.get(l.orderLineId ?? "") : undefined,
+      }))}
       products={qb.products}
       shipping={qb.shipping ? { label: `Estimated shipping (${air ? "air" : "sea"}: ${qb.shipping.basis.toString()} ${qb.shipping.unit} × ${qb.shipping.rate.toFixed(2)})`, amount: qb.shipping.amount } : null}
       delivery={qb.delivery}

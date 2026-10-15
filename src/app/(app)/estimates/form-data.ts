@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { BD_TZ, addDays, toYmd, today } from "@/lib/dates";
 import { canSeeSelling, type Viewer } from "@/lib/permissions";
 import { getCurrentRate } from "@/server/rates";
+import { quoteImageSelect } from "@/server/quote-images";
 import type { QInitial, QLine } from "./quotation-form";
 
 const s = (v: { toString(): string } | null | undefined) => (v === null || v === undefined ? "" : v.toString());
@@ -15,7 +16,7 @@ export async function quotationFormData(orderId: string, viewer: Viewer) {
     include: {
       customer: { select: { code: true } },
       lines: { where: { status: { not: "CANCELLED" } }, orderBy: { lineNo: "asc" }, include: { links: { select: { url: true }, take: 1 } } },
-      estimates: { orderBy: { version: "desc" }, take: 1, include: { lines: true } },
+      estimates: { orderBy: { version: "desc" }, take: 1, include: { lines: true, attachments: quoteImageSelect } },
     },
   });
   if (!order) notFound();
@@ -30,6 +31,7 @@ export async function quotationFormData(orderId: string, viewer: Viewer) {
     variant: [l.color, l.size, l.model].filter(Boolean).join(" · ") || "no variant",
     quantity: l.quantity,
     link: l.links[0]?.url,
+    images: (draft?.attachments ?? []).filter((a) => a.estimateOrderLineId === l.id).map(({ id, fileName }) => ({ id, fileName })),
   }));
   const initial: QInitial = {
     shippingMethod: draft?.shippingMethod ?? order.shippingMethod,

@@ -106,7 +106,7 @@ export function Parties({ customer, refs }: { customer: { name: string; code?: s
   );
 }
 
-export type Item = { description: string; detail?: string; qty?: string; unitPrice?: Decimal | string | null; amount: Decimal | string };
+export type Item = { description: string; detail?: string; qty?: string; unitPrice?: Decimal | string | null; amount: Decimal | string; images?: Buffer[] };
 
 const COL = { n: "6%", d: "50%", q: "12%", u: "16%", a: "16%" } as const;
 
@@ -127,6 +127,14 @@ export function ItemsTable({ items }: { items: Item[] }) {
           <View style={{ width: COL.d, paddingRight: 6 }}>
             <Text>{it.description}</Text>
             {it.detail ? <Text style={[s.small, s.muted]}>{it.detail}</Text> : null}
+            {it.images?.length ? (
+              <View style={{ flexDirection: "row", marginTop: 4 }}>
+                {it.images.map((src, k) => (
+                  // eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt
+                  <Image key={k} src={src} style={{ width: 48, height: 48, objectFit: "cover", marginRight: 4, borderRadius: 2 }} />
+                ))}
+              </View>
+            ) : null}
           </View>
           <Text style={{ width: COL.q, textAlign: "right" }}>{it.qty ?? "1"}</Text>
           <Text style={{ width: COL.u, textAlign: "right" }}>{it.unitPrice !== undefined && it.unitPrice !== null ? bdt(it.unitPrice) : bdt(it.amount)}</Text>

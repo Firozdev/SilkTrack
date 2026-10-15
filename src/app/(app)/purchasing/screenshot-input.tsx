@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 
 type Picked = { file: File; url: string | null };
 
-/** Optional screenshots (supplier order / payment proof) with thumbnails; each can be removed before saving. */
-export function ScreenshotInput({ name = "invoice" }: { name?: string }) {
+/** Optional screenshots / images with thumbnails; each can be removed before saving. */
+export function ScreenshotInput({ name = "invoice", accept = "image/*,application/pdf" }: { name?: string; accept?: string }) {
   const ref = useRef<HTMLInputElement>(null);
   const [picked, setPicked] = useState<Picked[]>([]);
   useEffect(() => () => picked.forEach((p) => p.url && URL.revokeObjectURL(p.url)), [picked]);
@@ -20,7 +20,7 @@ export function ScreenshotInput({ name = "invoice" }: { name?: string }) {
 
   return (
     <div className="space-y-2">
-      <input ref={ref} type="file" name={name} accept="image/*,application/pdf" multiple className="text-sm" onChange={(e) => sync([...(e.target.files ?? [])])} />
+      <input ref={ref} type="file" name={name} accept={accept} multiple className="text-sm" onChange={(e) => sync([...(e.target.files ?? [])])} />
       {picked.length > 0 && (
         <ul className="flex flex-wrap gap-2">
           {picked.map((p, i) => (

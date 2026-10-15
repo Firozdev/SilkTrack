@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { redactFor, type Viewer } from "@/lib/permissions";
+import { quoteImageSelect } from "./quote-images";
 
 const att = { select: { id: true, fileName: true, mimeType: true, uploadedByAccountId: true } } as const;
 
@@ -26,7 +27,7 @@ export async function getOrderView(orderId: string, viewer: Viewer) {
       comments: { orderBy: { createdAt: "asc" }, include: { author: { select: { name: true, role: true } }, attachments: att } },
       payments: { orderBy: { paidAt: "asc" }, include: { receivedBy: { select: { name: true } } } },
       paymentSubmissions: { where: { status: "PENDING" }, select: { id: true, amountBdt: true, method: true, paidAt: true, status: true } },
-      estimates: { orderBy: { version: "desc" }, select: { id: true, number: true, version: true, status: true, validUntil: true, grandTotalBdt: true, totalRmb: true } },
+      estimates: { orderBy: { version: "desc" }, select: { id: true, number: true, version: true, status: true, validUntil: true, grandTotalBdt: true, totalRmb: true, attachments: quoteImageSelect } },
       samples: { orderBy: { requestedAt: "desc" }, include: { lines: true } },
       invoices: { orderBy: { createdAt: "desc" } },
       deliveries: { orderBy: { createdAt: "desc" }, include: { attachments: att } },
