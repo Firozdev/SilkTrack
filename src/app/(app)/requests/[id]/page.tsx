@@ -11,6 +11,7 @@ import { can, canSeeSelling } from "@/lib/permissions";
 import { requireUser } from "@/lib/session";
 import { getOrderView } from "@/server/order-view";
 import { paymentSteps } from "@/lib/payment-timeline";
+import { PaidRmb } from "../../purchasing/paid-rmb";
 import { prisma } from "@/lib/prisma";
 import { isReleasedForPurchase } from "@/server/requests";
 import { requestSampleAction } from "../../samples/actions";
@@ -131,6 +132,17 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
                       </span>
                     ))}
                   </div>
+                  {l.purchaseLines.map((p) => (
+                    <div key={`paid-${p.id}`} className="mt-2 text-xs text-gray-600">
+                      {docNo("purchase", p.supplierOrder.number)} paid to supplier: <PaidRmb paidRmb={p.supplierOrder.paidRmb} totalRmb={p.supplierOrder.totalRmb} />
+                      {p.supplierOrder.attachments.length > 0 && (
+                        <div className="mt-1">
+                          Purchase screenshots:
+                          <Attachments items={p.supplierOrder.attachments} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>

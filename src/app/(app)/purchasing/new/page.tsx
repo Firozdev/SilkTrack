@@ -6,6 +6,7 @@ import { getSetting } from "@/lib/settings";
 import { purchaseQueue } from "@/server/purchasing";
 import { getCurrentRate } from "@/server/rates";
 import { createPurchaseAction } from "../actions";
+import { ScreenshotInput } from "../screenshot-input";
 
 export default async function NewPurchasePage({ searchParams }: PageProps<"/purchasing/new">) {
   await requirePagePermission("purchase:edit");
@@ -61,11 +62,14 @@ export default async function NewPurchasePage({ searchParams }: PageProps<"/purc
             <Field label="Estimated receive date (China warehouse) *">
               <input name="expectedArrivalAt" type="date" required className={inputCls} />
             </Field>
+            <Field label="Total RMB paid to supplier *" hint="What you actually paid, incl. shipping / service">
+              <input name="paidRmb" type="number" min="0.01" step="0.01" inputMode="decimal" required className={inputCls} />
+            </Field>
             <Field label="Notes" className="sm:col-span-2">
               <input name="notes" className={inputCls} />
             </Field>
-            <Field label="Invoice / screenshot">
-              <input type="file" name="invoice" accept="image/*,application/pdf" multiple className="text-sm" />
+            <Field label="Screenshot (optional)" className="sm:col-span-3" hint="Supplier order or payment proof – images or PDF">
+              <ScreenshotInput />
             </Field>
           </div>
         </Card>
@@ -84,7 +88,7 @@ export default async function NewPurchasePage({ searchParams }: PageProps<"/purc
                   <input name={`l.${i}.quantity`} type="number" min={0} max={l.remaining} defaultValue={l.remaining} className={inputCls} />
                 </Field>
                 <Field label="Unit price (RMB)">
-                  <input name={`l.${i}.unitPriceRmb`} inputMode="decimal" defaultValue={l.quotedUnitPriceRmb?.toString() ?? ""} required className={inputCls} />
+                  <input name={`l.${i}.unitPriceRmb`} type="number" min="0.01" step="0.01" inputMode="decimal" defaultValue={l.quotedUnitPriceRmb?.toString() ?? ""} required className={inputCls} />
                 </Field>
               </div>
             ))}
