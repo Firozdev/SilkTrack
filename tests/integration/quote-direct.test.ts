@@ -6,7 +6,7 @@ import { acceptInvite, approveAccount, signUp } from "@/server/portal-auth";
 import { assignAgent, createAgent } from "@/server/agents";
 import { placedBy } from "@/server/portal-access";
 import { createPortalRequest } from "@/server/requests";
-import { portalOrder } from "@/server/portal";
+import { portalOrder, portalSample } from "@/server/portal";
 import { saveQuotation, submitQuotation, type QuotationInput } from "@/server/estimates";
 import { invoiceSample, purchaseSample, recordSamplePayment, requestSampleFromPortal, shipSample } from "@/server/samples";
 import { createShipment } from "@/server/shipments";
@@ -111,7 +111,7 @@ describe("Sample from the quotation, requested in the portal", () => {
     await makeRate(toYmd(today(BD_TZ)), "17", admin.id);
   });
 
-  it("agent asks → CS invoices → customer + agent notified → payment confirmed → China buys and ships by air / sea / hand carry", async () => {
+  it("agent asks → China invoices (ship way + free shipping charge) → customer + agent notified → payment confirmed → China buys and ships by air / sea / hand carry", async () => {
     const { customer, agent, customerId } = await customerAndAgent();
     const { order } = await createPortalRequest(customerId, { shippingMethod: "AIR", lines: [{ productName: "Lamp", quantity: 10, links: [] }, { productName: "Shade", quantity: 4, links: [] }] }, placedBy(agent));
     const lines = await prisma.orderLine.findMany({ where: { orderId: order.id }, orderBy: { lineNo: "asc" } });
@@ -131,20 +131,35 @@ describe("Sample from the quotation, requested in the portal", () => {
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).requestStatus).toBe("SAMPLING");
     expect((await notified("SAMPLE_REQUESTED")).staff).toEqual([admin.id, china.id, cs.id].sort());
 
-    // CS / Admin prepare the sample invoice – not China
-    await expect(invoiceSample(china, s.id, { productRmb: "25", paymentRequired: true })).rejects.toThrow(ForbiddenError);
-    await invoiceSample(cs, s.id, { productRmb: "25", shippingToBdRmb: "15", paymentRequired: true });
+    // China prepares the sample invoice (CS / Admin may too; BD Warehouse can't): free ¥ shipping charge + ship way
+    const bdw = await makeUser("BD_WAREHOUSE");
+    await expect(invoiceSample(bdw, s.id, { shipWay: "SEA", productRmb: "25", paymentRequired: true })).rejects.toThrow(ForbiddenError);
+    await expect(invoiceSample(china, s.id, { shipWay: "BOAT" as never, productRmb: "25", paymentRequired: true })).rejects.toThrow(/hand carry, air shipment or sea shipment/);
+    await expect(invoiceSample(china, s.id, { shipWay: "SEA", productRmb: "25", shippingToBdRmb: "-5", paymentRequired: true })).rejects.toThrow(/negative/);
+    await invoiceSample(china, s.id, { shipWay: "SEA", productRmb: "25", shippingToBdRmb: "15", paymentRequired: true });
+    x = await prisma.sample.findUniqueOrThrow({ where: { id: s.id }, include: { events: true } });
+    expect([x.shipWay, x.totalRmb?.toString(), x.totalBdt?.toString(), x.invoicedById]).toEqual(["SEA", "40", "680", china.id]);
     const inv = await notified("SAMPLE_INVOICED");
     expect(inv.accounts).toEqual([agent.id, customer.id].sort());
-    expect(inv.staff).toEqual([admin.id, china.id].sort());
+    expect(inv.staff).toEqual([admin.id, cs.id].sort());
 
-    // Payment confirmed → China (and the customer) told; China buys
+    // The customer sees product ৳425 and shipping ৳255, both due – never the RMB cost lines
+    let p = await portalSample(customerId, s.id);
+    expect([p?.parts.product.toString(), p?.parts.productDue.toString(), p?.parts.shipping.toString(), p?.parts.shippingDue.toString()]).toEqual(["425", "425", "255", "255"]);
+    expect(JSON.stringify(p)).not.toMatch(/productRmb|serviceRmb|shippingToBdRmb|chinaShippingRmb/);
+
+    // Product only → China (and the customer) told; China buys; the shipping stays due
     const buy = () => purchaseSample(china, s.id, { supplierName: "Shop", purchaseTrackingUrl: "https://t.example/1", expectedAtWarehouseAt: FUTURE });
     await expect(buy()).rejects.toThrow(/Waiting/);
     await recordSamplePayment(cs, s.id, { amountBdt: "425", method: "BKASH" });
     const paid = await notified("SAMPLE_PAID");
     expect([paid.staff, paid.accounts]).toEqual([[china.id], [agent.id, customer.id].sort()]);
+    p = await portalSample(customerId, s.id);
+    expect([p?.parts.productDue.toString(), p?.parts.shippingDue.toString(), p?.balance.toString()]).toEqual(["0", "255", "255"]);
     await buy();
+    await recordSamplePayment(cs, s.id, { amountBdt: "255", method: "BKASH" });
+    p = await portalSample(customerId, s.id);
+    expect([p?.parts.shippingDue.toString(), p?.balance.toString()]).toEqual(["0", "0"]);
 
     // Three ways only: hand carry, air shipment, sea shipment (shipment must match)
     const air = await createShipment(admin, { method: "AIR", cutoffDate: FUTURE, openNow: true });

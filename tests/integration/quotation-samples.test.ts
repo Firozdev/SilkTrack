@@ -138,7 +138,7 @@ describe("samples", () => {
     const s = await requestSample(cs, order.id, { lines, note: "check colour" });
     expect(await prisma.notification.count({ where: { type: "SAMPLE_REQUESTED", userId: china.id } })).toBe(1);
 
-    await invoiceSample(cs, s.id, { productRmb: "25", shippingToBdRmb: "60", paymentRequired: true });
+    await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "25", shippingToBdRmb: "60", paymentRequired: true });
     let x = await prisma.sample.findUniqueOrThrow({ where: { id: s.id } });
     expect([x.status, x.totalRmb?.toString(), x.totalBdt?.toString()]).toEqual(["AWAITING_PAYMENT", "85", "1445"]);
     const buy = () => purchaseSample(china, s.id, { supplierName: "Shop", purchaseTrackingUrl: "https://t.example/1", expectedAtWarehouseAt: FUTURE });
@@ -162,7 +162,7 @@ describe("samples", () => {
     const { order, e } = await quoted();
     await submitQuotation(china, e.id);
     const s = await requestSample(cs, order.id, { lines: [{ orderLineId: order.lines[1].id, quantity: 2 }] });
-    await invoiceSample(cs, s.id, { productRmb: "60", paymentRequired: false });
+    await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "60", paymentRequired: false });
     await purchaseSample(china, s.id, { supplierName: "Shop", purchaseTrackingUrl: "https://t.example/2", expectedAtWarehouseAt: FUTURE });
     await shipSample(china, s.id, { shippingMode: "HAND_CARRY", carrierName: "Mr. Li (flight BS-322)" });
     expect((await prisma.sample.findUniqueOrThrow({ where: { id: s.id } })).status).toBe("SHIPPED");
@@ -203,7 +203,7 @@ describe("request status while sampling", () => {
     await submitQuotation(china, e.id); // sent straight to the customer
     const s = await requestSample(cs, order.id, { lines: [{ orderLineId: order.lines[0].id, quantity: 1 }] });
     expect(await status(order.id)).toBe("SAMPLING");
-    await invoiceSample(cs, s.id, { productRmb: "10", paymentRequired: false });
+    await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "10", paymentRequired: false });
     await purchaseSample(china, s.id, { supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
     await shipSample(china, s.id, { shippingMode: "HAND_CARRY" });
     await receiveSampleBd(cs, s.id);
@@ -240,7 +240,7 @@ describe("stand-alone samples", () => {
     expect([row.orderId, row.customer.code, row.lines[0].productName, row.lines[0].variant]).toEqual([null, "C-00001", "Leather bag", "brown"]);
     expect(await prisma.notification.count({ where: { type: "SAMPLE_REQUESTED", userId: china.id } })).toBe(1);
 
-    await invoiceSample(cs, s.id, { productRmb: "50", paymentRequired: true });
+    await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "50", paymentRequired: true });
     await recordSamplePayment(cs, s.id, { amountBdt: "850", method: "NAGAD" });
     expect((await prisma.payment.findFirstOrThrow({ where: { sampleId: s.id } })).orderId).toBeNull();
     await purchaseSample(china, s.id, { supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
@@ -266,17 +266,17 @@ describe("sample size and planned shipment", () => {
     const { createStandaloneSample } = await import("@/server/samples");
     const { createShipment, setShipmentStatus } = await import("@/server/shipments");
     const s = await createStandaloneSample(cs, { customer: { name: "Z", phone: "0188", address: "x" }, lines: [{ productName: "Vase", quantity: 1 }] });
-    await invoiceSample(cs, s.id, { productRmb: "40", shippingRatePerKgRmb: "30", paymentRequired: false, size: { weightKg: "2.5", lengthCm: "40", widthCm: "30", heightCm: "20" } });
+    await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "40", shippingRatePerKgRmb: "30", paymentRequired: false, size: { weightKg: "2.5", lengthCm: "40", widthCm: "30", heightCm: "20" } });
     let x = await prisma.sample.findUniqueOrThrow({ where: { id: s.id } });
     expect([x.weightKg?.toString(), x.cartonCount, x.cbm?.toString(), x.shippingToBdRmb?.toString(), x.totalRmb?.toString()]).toEqual(["2.5", 1, "0.024", "75", "115"]);
     expect([x.shippingRatePerKgRmb?.toString(), x.shippingRatePerCbmRmb]).toEqual(["30", null]);
 
     // edit: a typed amount wins over the rate, the rate is still kept
-    await invoiceSample(cs, s.id, { productRmb: "40", shippingRatePerKgRmb: "30", shippingToBdRmb: "60", paymentRequired: false, size: { weightKg: "2.5", lengthCm: "40", widthCm: "30", heightCm: "20" } });
+    await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "40", shippingRatePerKgRmb: "30", shippingToBdRmb: "60", paymentRequired: false, size: { weightKg: "2.5", lengthCm: "40", widthCm: "30", heightCm: "20" } });
     x = await prisma.sample.findUniqueOrThrow({ where: { id: s.id } });
     expect([x.shippingToBdRmb?.toString(), x.shippingRatePerKgRmb?.toString(), x.totalRmb?.toString()]).toEqual(["60", "30", "100"]);
     // switching to a per-CBM rate clears the per-kg one
-    await invoiceSample(cs, s.id, { productRmb: "40", shippingRatePerCbmRmb: "2000", paymentRequired: false, size: { weightKg: "2.5", lengthCm: "40", widthCm: "30", heightCm: "20" } });
+    await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "40", shippingRatePerCbmRmb: "2000", paymentRequired: false, size: { weightKg: "2.5", lengthCm: "40", widthCm: "30", heightCm: "20" } });
     x = await prisma.sample.findUniqueOrThrow({ where: { id: s.id } });
     expect([x.shippingToBdRmb?.toString(), x.shippingRatePerKgRmb, x.shippingRatePerCbmRmb?.toString()]).toEqual(["48", null, "2000"]);
 
@@ -315,7 +315,7 @@ describe("sample paid in two parts", () => {
     const { customerLedger } = await import("@/server/ledger");
     const s = await createStandaloneSample(cs, { customer: { name: "Two", phone: "0166", address: "x" }, lines: [{ productName: "Lamp", quantity: 1 }] });
     // product 50 + service 10 = ¥60 → ৳1,020 before purchase; shipping ¥40 → ৳680 on delivery
-    await invoiceSample(cs, s.id, { productRmb: "50", serviceRmb: "10", shippingToBdRmb: "40", paymentRequired: true });
+    await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "50", serviceRmb: "10", shippingToBdRmb: "40", paymentRequired: true });
     const row = () => prisma.sample.findUniqueOrThrow({ where: { id: s.id } });
     let a = await sampleBalance(await row());
     expect([a.total, a.beforePurchase, a.onDelivery, a.upfrontDue].map(String)).toEqual(["1700", "1020", "680", "1020"]);
@@ -342,7 +342,7 @@ describe("sample paid in two parts", () => {
   it("can deliver without collecting; balance stays due", async () => {
     const { createStandaloneSample, sampleBalance } = await import("@/server/samples");
     const s = await createStandaloneSample(cs, { customer: { name: "Due", phone: "0155", address: "x" }, lines: [{ productName: "Cup", quantity: 1 }] });
-    await invoiceSample(cs, s.id, { productRmb: "10", shippingToBdRmb: "10", paymentRequired: false });
+    await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "10", shippingToBdRmb: "10", paymentRequired: false });
     await purchaseSample(china, s.id, { supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
     await shipSample(china, s.id, { shippingMode: "HAND_CARRY" });
     await receiveSampleBd(cs, s.id);

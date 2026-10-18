@@ -58,14 +58,20 @@ export default async function PortalSamplePage({ params }: PageProps<"/portal/sa
           <ReceiptBox t={t} kind="sample" id={s.id} canConfirm={s.status === "DELIVERED"} confirmedAt={s.customerConfirmedAt} note={s.customerNote} problem={s.customerReportedProblem} />
         </div>
         <div className="space-y-5">
-          <PaymentBox t={t} lang={lang} kind="sample" id={s.id} due={due?.due ?? null} submissions={s.paymentSubmissions} />
+          <PaymentBox t={t} lang={lang} kind="sample" id={s.id} due={due?.due ?? null} submissions={s.paymentSubmissions} parts={s.totalBdt ? s.parts : undefined} />
           <Card title={t.billShipping}>
             <Dl
               items={[
                 [t.sampleBill, fmtBdt(s.totalBdt)],
+                ...(s.totalBdt
+                  ? ([
+                      [t.sampleProductPart, fill(t.partDue, { amount: fmtBdt(s.parts.product), due: fmtBdt(s.parts.productDue) })],
+                      [t.sampleShippingPart, fill(t.partDue, { amount: fmtBdt(s.parts.shipping), due: fmtBdt(s.parts.shippingDue) })],
+                    ] as [string, React.ReactNode][])
+                  : []),
                 [t.paid, fmtBdt(s.paid)],
                 [t.balanceDue, <b key="b">{s.totalBdt ? fmtBdt(s.balance) : "—"}</b>],
-                [t.sentBy, s.shipment ? `${t.shipment} ${s.shipment.code}` : s.shippingMode ? portalLabel(s.shippingMode, lang) : "—"],
+                [t.sentBy, s.shipment ? `${t.shipment} ${s.shipment.code}` : s.shippingMode ? portalLabel(s.shippingMode, lang) : s.shipWay ? portalLabel(s.shipWay, lang) : "—"],
                 [
                   t.tracking,
                   s.trackingUrl ? (

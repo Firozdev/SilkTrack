@@ -48,6 +48,7 @@ export const invoiceAction = step(async (u, id, fd) => {
       shippingRatePerCbmRmb: zDecOpt,
       serviceRmb: zDecOpt,
       paymentRequired: z.enum(["yes", "no"]),
+      shipWay: z.enum(["HAND_CARRY", "AIR", "SEA"], { message: "Choose how the sample will be sent" }),
     })
     .parse(f);
   await invoiceSample(u, id, { ...i, paymentRequired: i.paymentRequired === "yes", size: sizeSchema.parse(f) });

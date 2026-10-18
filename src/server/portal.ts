@@ -6,6 +6,7 @@ import { D, sum, type Decimal } from "@/lib/money";
 import { isoWeekStart } from "@/lib/dates";
 import { customerLedger } from "./ledger";
 import { quoteBreakdown } from "./quote-breakdown";
+import { sampleAmounts } from "./samples";
 
 /**
  * Customer portal reads. Every query is scoped to the signed-in customer and
@@ -242,6 +243,11 @@ export async function portalSample(customerId: string, id: string) {
       order: { select: { id: true, number: true } },
       lines: { select: { id: true, productName: true, variant: true, quantity: true, attachments: fileSelect } },
       totalBdt: true,
+      productRmb: true,
+      chinaShippingRmb: true,
+      serviceRmb: true,
+      shippingToBdRmb: true,
+      shipWay: true,
       invoicedAt: true,
       shippingMode: true,
       carrierName: true,
@@ -259,9 +265,11 @@ export async function portalSample(customerId: string, id: string) {
     },
   });
   if (!s) return null;
+  const { productRmb, chinaShippingRmb, serviceRmb, shippingToBdRmb, ...rest } = s;
   const paid = paidOf(s.payments);
-  const balance = D(s.totalBdt).sub(paid);
-  return { ...s, paid, balance: balance.isNeg() ? D(0) : balance };
+  // Only the BDT split leaves the server, never the RMB cost lines.
+  const a = sampleAmounts({ totalBdt: s.totalBdt, productRmb, chinaShippingRmb, serviceRmb, shippingToBdRmb }, paid);
+  return { ...rest, paid, balance: a.balance, parts: { product: a.beforePurchase, shipping: a.onDelivery, productDue: a.productDue, shippingDue: a.shippingDue } };
 }
 
 // ───────────────────────── Shipment box ─────────────────────────

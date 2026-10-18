@@ -205,6 +205,13 @@ enum SampleStatus {
   CANCELLED
 }
 
+/// How China plans to send a sample, chosen on the sample invoice.
+enum SampleShipWay {
+  HAND_CARRY
+  AIR
+  SEA
+}
+
 /// Shipping-only service: the customer buys in China themselves; we receive,
 /// optionally QA-test, ship, invoice and deliver.
 enum ShippingOrderStatus {
@@ -831,6 +838,8 @@ model Sample {
   totalBdt              Decimal?      @db.Decimal(14, 2)
   /// China decides on invoicing whether to wait for payment before buying.
   paymentRequired       Boolean?
+  /// Chosen by China on the sample invoice; pre-fills the shipping step.
+  shipWay               SampleShipWay?
   invoicedById          String?
   invoicedBy            User?         @relation("SampleInvoicedBy", fields: [invoicedById], references: [id])
   invoicedAt            DateTime?

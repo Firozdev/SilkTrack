@@ -1,7 +1,7 @@
 import "server-only";
-import type { PaymentMethod, Prisma, SampleShippingMode, SampleStatus, ShippingMethod } from "@/generated/prisma/client";
+import type { PaymentMethod, Prisma, SampleShipWay, SampleShippingMode, SampleStatus, ShippingMethod } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { assertCan, can } from "@/lib/permissions";
+import { ForbiddenError, assertCan, can } from "@/lib/permissions";
 import { UserError } from "@/lib/action";
 import { D, allocate, cbmOf, money, rmbToBdt, sum } from "@/lib/money";
 import { docNo } from "@/lib/format";
@@ -167,12 +167,23 @@ export type SampleInvoiceInput = {
   shippingRatePerCbmRmb?: string;
   serviceRmb?: string;
   paymentRequired: boolean;
+  /** How China will send it: hand carry, air or sea shipment. */
+  shipWay: SampleShipWay;
   size?: SampleSizeInput;
 };
 
-/** CS / Admin prepare the customer's sample invoice and decide if payment must come first. */
+const SHIP_WAYS: SampleShipWay[] = ["HAND_CARRY", "AIR", "SEA"];
+const WAY_LABEL: Record<SampleShipWay, string> = { HAND_CARRY: "hand carry", AIR: "air shipment", SEA: "sea shipment" };
+
+/**
+ * China (or CS / Admin) prepare the customer's sample invoice: prices, the
+ * shipping charge to Bangladesh (a free ¥ amount) and the way it will be
+ * sent; and decide if payment must come first.
+ */
 export async function invoiceSample(actor: Actor, id: string, input: SampleInvoiceInput) {
-  assertCan(actor.role, "quote:edit");
+  if (!can(actor.role, "estimate:edit") && !can(actor.role, "quote:edit")) throw new ForbiddenError("estimate:edit");
+  if (!SHIP_WAYS.includes(input.shipWay)) throw new UserError("Choose hand carry, air shipment or sea shipment");
+  for (const v of [input.productRmb, input.chinaShippingRmb, input.shippingToBdRmb, input.serviceRmb]) if (v && D(v).isNeg()) throw new UserError("Amounts can't be negative");
   const s = await load(id);
   if (!["REQUESTED", "INVOICED", "AWAITING_PAYMENT"].includes(s.status)) throw new UserError("The sample invoice can't be changed now");
   const { exchangeRateId, rateUsed } = await rateForConversion();
@@ -196,7 +207,7 @@ export async function invoiceSample(actor: Actor, id: string, input: SampleInvoi
         totalRmb,
       }),
     });
-    await move(tx, s, to, actor.id, `Sample invoice ¥${totalRmb.toFixed(2)} (৳${totalBdt.toFixed(2)} @ ${rateUsed.toString()}) – ${input.paymentRequired ? "payment required before purchase" : "no payment needed before purchase"}`, {
+    await move(tx, s, to, actor.id, `Sample invoice ¥${totalRmb.toFixed(2)} (৳${totalBdt.toFixed(2)} @ ${rateUsed.toString()}) · send by ${WAY_LABEL[input.shipWay]} – ${input.paymentRequired ? "payment required before purchase" : "no payment needed before purchase"}`, {
       productRmb: input.productRmb,
       chinaShippingRmb: input.chinaShippingRmb ?? null,
       shippingToBdRmb: shippingToBdRmb ?? null,
@@ -209,6 +220,7 @@ export async function invoiceSample(actor: Actor, id: string, input: SampleInvoi
       rateUsed,
       totalBdt,
       paymentRequired: input.paymentRequired,
+      shipWay: input.shipWay,
       invoicedById: actor.id,
       invoicedAt: new Date(),
     });
@@ -244,6 +256,9 @@ export function sampleAmounts(s: AmountFields, paidBdt: Prisma.Decimal | string 
     balance: balance.isNeg() ? D(0) : balance,
     /** Still needed before China may buy. */
     upfrontDue: beforePurchase.sub(paid).isNeg() ? D(0) : beforePurchase.sub(paid),
+    /** Payments count towards the product first, then the shipping. */
+    productDue: beforePurchase.sub(paid).isNeg() ? D(0) : beforePurchase.sub(paid),
+    shippingDue: paid.gt(beforePurchase) ? (onDelivery.sub(paid.sub(beforePurchase)).isNeg() ? D(0) : onDelivery.sub(paid.sub(beforePurchase))) : onDelivery,
   };
 }
 
