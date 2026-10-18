@@ -79,7 +79,7 @@ export const TEMPLATES: Record<EventType, T> = {
     a === "customer" ? { title: `Problem found with ${s(d.ref)}`, body: `${s(d.problem)}. We are sorting it out and will update you.` } : { title: `Issue reported: ${s(d.ref)}`, body: `${s(d.problem)}${opt(" · ", d.where)}` },
   ISSUE_RESOLVED: (d, a) => (a === "customer" ? { title: `Problem with ${s(d.ref)} resolved`, body: s(d.resolution) || "The problem was resolved." } : { title: `${s(d.issue)} resolved (${s(d.ref)})`, body: s(d.resolution) }),
 
-  SAMPLE_REQUESTED: (d) => ({ title: `Sample requested: ${s(d.ref)}`, body: `${s(d.detail)}${opt(" · by ", d.by)} – CS / Admin: prepare the sample invoice.` }),
+  SAMPLE_REQUESTED: (d) => ({ title: `Sample requested: ${s(d.ref)}`, body: `${s(d.detail)}${opt(" · by ", d.by)} – China: prepare the sample invoice (price, ship way, shipping charge).` }),
   SAMPLE_INVOICED: (d, a) =>
     a === "customer"
       ? { title: `Sample invoice: ${s(d.ref)}`, body: `৳${s(d.total)}. ${d.paymentRequired ? "Please pay and tell us in the portal – we buy the sample once it is paid." : "We are buying your sample now."}` }
