@@ -118,6 +118,7 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
                 <dd className="tabular-nums">{fmtRmb(q.rmb.total)}</dd>
               </div>
               <p className="text-xs">{fill(t.rateLine, { rate: fmtRate(q.rmb.rate), date: fmtDay(q.rmb.rateDate) })}</p>
+              <p className="text-xs">{t.bdtInclCharges}</p>
             </dl>
           )}
           <dl className="ml-auto mt-3 max-w-md space-y-1 text-sm">
