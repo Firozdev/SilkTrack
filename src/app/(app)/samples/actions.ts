@@ -60,8 +60,19 @@ export const paymentAction = step(async (u, id, fd) => {
 }, "Payment recorded.");
 
 export const purchaseAction = step(async (u, id, fd) => {
-  const p = z.object({ supplierName: z.string().trim().min(1, "required"), supplierOrderNo: zStrOpt, purchaseTrackingUrl: z.string().trim().min(1, "Enter the order tracking URL"), expectedAtWarehouseAt: zYmd }).parse(fields(fd));
+  const p = z
+    .object({
+      supplierName: z.string().trim().min(1, "required"),
+      supplierOrderNo: zStrOpt,
+      purchaseTrackingUrl: z.string().trim().min(1, "Enter the order tracking URL"),
+      expectedAtWarehouseAt: zYmd,
+      paidRmb: z.string().trim().min(1, "Enter the total RMB paid to the supplier"),
+    })
+    .parse(fields(fd));
   await purchaseSample(u, id, { ...p, expectedAtWarehouseAt: dayFromYmd(p.expectedAtWarehouseAt) });
+  // Optional screenshot of the supplier payment – staff only (never shown in the portal).
+  const proof = files(fd, "invoice");
+  if (proof.length) await saveAttachments(proof, "SUPPLIER_INVOICE", u.id, { sampleId: id });
 }, "Sample purchased.");
 
 export const shipAction = step(async (u, id, fd) => {

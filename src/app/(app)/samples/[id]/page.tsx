@@ -16,6 +16,7 @@ import { SendInvoice } from "./send-invoice";
 import { acceptingShipments } from "@/server/shipments";
 import { cancelAction, deliverAction, paymentAction, photoAction, purchaseAction, receiveAction } from "../actions";
 import { SampleInvoiceForm, SampleShipForm } from "./sample-forms";
+import { ScreenshotInput } from "../../purchasing/screenshot-input";
 import { Step, Waiting } from "./step";
 import { CustomerPanel } from "../../customer-panel";
 
@@ -179,6 +180,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                     ["Supplier order no.", s.supplierOrderNo],
                     ["Order tracking", s.purchaseTrackingUrl ? <a key="u" href={s.purchaseTrackingUrl} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">Open ↗</a> : "—"],
                     ["Purchased", `${fmtDateTime(s.purchasedAt, user.timezone)} · ${s.purchasedBy?.name ?? ""}`],
+                    ["Paid to supplier", s.paidRmb ? `${fmtRmb(s.paidRmb)} · ${fmtBdt(s.paidBdt)} @ ${fmtRate(s.purchaseRate)}` : "—"],
                   ]}
                 />
               ) : china ? (
@@ -196,6 +198,12 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                     </Field>
                     <Field label="Estimated receive date (China) *">
                       <input name="expectedAtWarehouseAt" type="date" required className={inputCls} />
+                    </Field>
+                    <Field label="Total RMB paid to supplier ¥ *" hint={s.productRmb ? `Invoiced: sample ${fmtRmb(s.productRmb)}${s.chinaShippingRmb ? ` + China shipping ${fmtRmb(s.chinaShippingRmb)}` : ""}` : undefined}>
+                      <input name="paidRmb" required inputMode="decimal" placeholder="0.00" className={inputCls} />
+                    </Field>
+                    <Field label="Payment screenshot (optional)">
+                      <ScreenshotInput />
                     </Field>
                   </div>
                 </ActionForm>
@@ -376,6 +384,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                 ["Order tracking", s.purchaseTrackingUrl ? <a key="u" href={s.purchaseTrackingUrl} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">Open ↗</a> : "—"],
                 ["Est. receive (China)", fmtDay(s.expectedAtWarehouseAt)],
                 ["Purchased", s.purchasedAt ? `${fmtDateTime(s.purchasedAt, user.timezone)} · ${s.purchasedBy?.name ?? ""}` : "—"],
+                ["Paid to supplier", s.paidRmb ? `${fmtRmb(s.paidRmb)} · ${fmtBdt(s.paidBdt)} @ ${fmtRate(s.purchaseRate)}` : "—"],
                 ["Size", s.weightKg || s.cbm ? `${fmtKg(s.weightKg)} · ${s.cartonCount ?? 1} ctn${s.lengthCm ? ` · ${fmtNum(s.lengthCm, 1)}×${fmtNum(s.widthCm, 1)}×${fmtNum(s.heightCm, 1)} cm` : ""} · ${fmtCbm(s.cbm)}` : "—"],
                 ["Sent by", s.shippingMode ? (s.shippingMode === "WEEKLY_SHIPMENT" ? `${s.shipment?.method === "SEA" ? "Sea" : "Air"} shipment` : humanize(s.shippingMode)) : "—"],
                 ["Shipment", s.shipment ? <A key="s" href={`/shipments/${s.shipment.id}`}>{s.shipment.code}</A> : "—"],

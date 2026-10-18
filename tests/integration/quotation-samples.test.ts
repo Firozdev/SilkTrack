@@ -141,7 +141,7 @@ describe("samples", () => {
     await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "25", shippingToBdRmb: "60", paymentRequired: true });
     let x = await prisma.sample.findUniqueOrThrow({ where: { id: s.id } });
     expect([x.status, x.totalRmb?.toString(), x.totalBdt?.toString()]).toEqual(["AWAITING_PAYMENT", "85", "1445"]);
-    const buy = () => purchaseSample(china, s.id, { supplierName: "Shop", purchaseTrackingUrl: "https://t.example/1", expectedAtWarehouseAt: FUTURE });
+    const buy = () => purchaseSample(china, s.id, { paidRmb: "30", supplierName: "Shop", purchaseTrackingUrl: "https://t.example/1", expectedAtWarehouseAt: FUTURE });
     await expect(buy()).rejects.toThrow(/Waiting for the BD team/);
 
     await recordSamplePayment(cs, s.id, { amountBdt: "1445", method: "BKASH" });
@@ -163,7 +163,7 @@ describe("samples", () => {
     await submitQuotation(china, e.id);
     const s = await requestSample(cs, order.id, { lines: [{ orderLineId: order.lines[1].id, quantity: 2 }] });
     await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "60", paymentRequired: false });
-    await purchaseSample(china, s.id, { supplierName: "Shop", purchaseTrackingUrl: "https://t.example/2", expectedAtWarehouseAt: FUTURE });
+    await purchaseSample(china, s.id, { paidRmb: "30", supplierName: "Shop", purchaseTrackingUrl: "https://t.example/2", expectedAtWarehouseAt: FUTURE });
     await shipSample(china, s.id, { shippingMode: "HAND_CARRY", carrierName: "Mr. Li (flight BS-322)" });
     expect((await prisma.sample.findUniqueOrThrow({ where: { id: s.id } })).status).toBe("SHIPPED");
     await cancelSample(cs, s.id, "customer cancelled");
@@ -204,7 +204,7 @@ describe("request status while sampling", () => {
     const s = await requestSample(cs, order.id, { lines: [{ orderLineId: order.lines[0].id, quantity: 1 }] });
     expect(await status(order.id)).toBe("SAMPLING");
     await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "10", paymentRequired: false });
-    await purchaseSample(china, s.id, { supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
+    await purchaseSample(china, s.id, { paidRmb: "30", supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
     await shipSample(china, s.id, { shippingMode: "HAND_CARRY" });
     await receiveSampleBd(cs, s.id);
     await deliverSample(cs, s.id, "good");
@@ -243,7 +243,7 @@ describe("stand-alone samples", () => {
     await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "50", paymentRequired: true });
     await recordSamplePayment(cs, s.id, { amountBdt: "850", method: "NAGAD" });
     expect((await prisma.payment.findFirstOrThrow({ where: { sampleId: s.id } })).orderId).toBeNull();
-    await purchaseSample(china, s.id, { supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
+    await purchaseSample(china, s.id, { paidRmb: "30", supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
     await shipSample(china, s.id, { shippingMode: "HAND_CARRY", trackingNo: "EMS1" });
     await receiveSampleBd(cs, s.id);
     await deliverSample(cs, s.id);
@@ -280,7 +280,7 @@ describe("sample size and planned shipment", () => {
     x = await prisma.sample.findUniqueOrThrow({ where: { id: s.id } });
     expect([x.shippingToBdRmb?.toString(), x.shippingRatePerKgRmb, x.shippingRatePerCbmRmb?.toString()]).toEqual(["48", null, "2000"]);
 
-    await purchaseSample(china, s.id, { supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
+    await purchaseSample(china, s.id, { paidRmb: "30", supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
     const planned = await createShipment(admin, { method: "AIR", cutoffDate: FUTURE, openNow: true });
     await expect(shipSample(china, s.id, { shippingMode: "WEEKLY_SHIPMENT" })).rejects.toThrow(/planned shipment/);
     await expect(shipSample(china, s.id, { shippingMode: "WEEKLY_SHIPMENT", method: "SEA", shipmentId: planned.id })).rejects.toThrow(/not a sea shipment/);
@@ -327,7 +327,7 @@ describe("sample paid in two parts", () => {
     expect((await row()).status).toBe("PAID");
     await expect(recordSamplePayment(cs, s.id, { amountBdt: "700", method: "CASH" })).rejects.toThrow(/more than the balance due \(৳680.00\)/);
 
-    await purchaseSample(china, s.id, { supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
+    await purchaseSample(china, s.id, { paidRmb: "30", supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
     await shipSample(china, s.id, { shippingMode: "HAND_CARRY" });
     await receiveSampleBd(cs, s.id);
     await expect(deliverSample(cs, s.id, "ok", { amountBdt: "681", method: "CASH" })).rejects.toThrow(/balance due/);
@@ -343,7 +343,7 @@ describe("sample paid in two parts", () => {
     const { createStandaloneSample, sampleBalance } = await import("@/server/samples");
     const s = await createStandaloneSample(cs, { customer: { name: "Due", phone: "0155", address: "x" }, lines: [{ productName: "Cup", quantity: 1 }] });
     await invoiceSample(cs, s.id, { shipWay: "HAND_CARRY", productRmb: "10", shippingToBdRmb: "10", paymentRequired: false });
-    await purchaseSample(china, s.id, { supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
+    await purchaseSample(china, s.id, { paidRmb: "30", supplierName: "S", purchaseTrackingUrl: "https://x.example", expectedAtWarehouseAt: FUTURE });
     await shipSample(china, s.id, { shippingMode: "HAND_CARRY" });
     await receiveSampleBd(cs, s.id);
     await deliverSample(cs, s.id);

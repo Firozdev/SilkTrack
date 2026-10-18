@@ -149,14 +149,26 @@ describe("Sample from the quotation, requested in the portal", () => {
     expect(JSON.stringify(p)).not.toMatch(/productRmb|serviceRmb|shippingToBdRmb|chinaShippingRmb/);
 
     // Product only → China (and the customer) told; China buys; the shipping stays due
-    const buy = () => purchaseSample(china, s.id, { supplierName: "Shop", purchaseTrackingUrl: "https://t.example/1", expectedAtWarehouseAt: FUTURE });
+    const buy = (paidRmb = "28.50") => purchaseSample(china, s.id, { supplierName: "Shop", purchaseTrackingUrl: "https://t.example/1", expectedAtWarehouseAt: FUTURE, paidRmb });
     await expect(buy()).rejects.toThrow(/Waiting/);
     await recordSamplePayment(cs, s.id, { amountBdt: "425", method: "BKASH" });
     const paid = await notified("SAMPLE_PAID");
     expect([paid.staff, paid.accounts]).toEqual([[china.id], [agent.id, customer.id].sort()]);
     p = await portalSample(customerId, s.id);
     expect([p?.parts.productDue.toString(), p?.parts.shippingDue.toString(), p?.balance.toString()]).toEqual(["0", "255", "255"]);
+    // The RMB China spent is required (> 0), saved with today's rate, audited – and never shown in the portal
+    await expect(buy("")).rejects.toThrow(/total RMB paid/);
+    await expect(buy("0")).rejects.toThrow(/total RMB paid/);
+    await expect(buy("abc")).rejects.toThrow(/total RMB paid/);
     await buy();
+    x = await prisma.sample.findUniqueOrThrow({ where: { id: s.id }, include: { events: true } });
+    expect([x.status, x.paidRmb?.toString(), x.purchaseRate?.toString(), x.paidBdt?.toString()]).toEqual(["PURCHASED", "28.5", "17", "484.5"]);
+    const audit = await prisma.auditLog.findMany({ where: { entityId: s.id, field: { in: ["paidRmb", "paidVsInvoicedRmb"] } } });
+    expect(audit.map((a) => [a.field, a.newValue]).sort()).toEqual([
+      ["paidRmb", "28.50"],
+      ["paidVsInvoicedRmb", "3.50"],
+    ]);
+    expect(JSON.stringify(await portalSample(customerId, s.id))).not.toMatch(/paidRmb|paidBdt|purchaseRate/);
     await recordSamplePayment(cs, s.id, { amountBdt: "255", method: "BKASH" });
     p = await portalSample(customerId, s.id);
     expect([p?.parts.shippingDue.toString(), p?.balance.toString()]).toEqual(["0", "0"]);

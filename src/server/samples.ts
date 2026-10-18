@@ -297,7 +297,14 @@ export async function recordSamplePayment(actor: Actor, id: string, input: { amo
   return payment;
 }
 
-export type SamplePurchaseInput = { supplierName: string; supplierOrderNo?: string; purchaseTrackingUrl: string; expectedAtWarehouseAt: Date };
+export type SamplePurchaseInput = {
+  supplierName: string;
+  supplierOrderNo?: string;
+  purchaseTrackingUrl: string;
+  expectedAtWarehouseAt: Date;
+  /** Total RMB China paid the supplier (required, > 0). */
+  paidRmb: string;
+};
 
 export async function purchaseSample(actor: Actor, id: string, input: SamplePurchaseInput) {
   assertCan(actor.role, "purchase:edit");
@@ -305,16 +312,38 @@ export async function purchaseSample(actor: Actor, id: string, input: SamplePurc
   if (s.status === "AWAITING_PAYMENT") throw new UserError("Waiting for the BD team to confirm the sample payment");
   if (!["INVOICED", "PAID"].includes(s.status)) throw new UserError("Invoice the sample before purchasing");
   if (!/^https?:\/\//i.test(input.purchaseTrackingUrl.trim())) throw new UserError("Tracking URL must start with http:// or https://");
-  await prisma.$transaction((tx) =>
-    move(tx, s, "PURCHASED", actor.id, `Sample purchased from ${input.supplierName}`, {
+  const t = input.paidRmb?.trim() ?? "";
+  if (!/^\d+(\.\d+)?$/.test(t) || money(t).lte(0)) throw new UserError("Enter the total RMB paid to the supplier");
+  const paidRmb = money(t);
+  const { rateUsed } = await rateForConversion();
+  const paidBdt = rmbToBdt(paidRmb, rateUsed);
+  // Compared with what was invoiced for buying it (sample price + China shipping).
+  const invoicedRmb = sum([s.productRmb, s.chinaShippingRmb]);
+  await prisma.$transaction(async (tx) => {
+    await logChanges(tx, {
+      entityType: "Sample",
+      entityId: s.id,
+      userId: actor.id,
+      action: "UPDATE",
+      changes: [
+        { field: "paidRmb", oldValue: s.paidRmb?.toFixed(2) ?? null, newValue: paidRmb.toFixed(2) },
+        { field: "purchaseRate", oldValue: s.purchaseRate?.toString() ?? null, newValue: rateUsed.toString() },
+        { field: "paidBdt", oldValue: s.paidBdt?.toFixed(2) ?? null, newValue: paidBdt.toFixed(2) },
+        ...(paidRmb.equals(invoicedRmb) ? [] : [{ field: "paidVsInvoicedRmb", oldValue: null, newValue: paidRmb.sub(invoicedRmb).toFixed(2) }]),
+      ],
+    });
+    await move(tx, s, "PURCHASED", actor.id, `Sample purchased from ${input.supplierName}`, {
+      paidRmb,
+      paidBdt,
+      purchaseRate: rateUsed,
       supplierName: input.supplierName,
       supplierOrderNo: input.supplierOrderNo ?? null,
       purchaseTrackingUrl: input.purchaseTrackingUrl.trim(),
       expectedAtWarehouseAt: input.expectedAtWarehouseAt,
       purchasedById: actor.id,
       purchasedAt: new Date(),
-    }),
-  );
+    });
+  });
   await notify("SAMPLE_PURCHASED", { sample: s }, { detail: ref(s) }, { userId: actor.id });
 }
 

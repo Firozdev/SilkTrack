@@ -852,6 +852,12 @@ model Sample {
   purchasedById         String?
   purchasedBy           User?     @relation("SamplePurchasedBy", fields: [purchasedById], references: [id])
   purchasedAt           DateTime?
+  /// Total RMB China paid the supplier for this sample.
+  paidRmb               Decimal?  @db.Decimal(14, 2)
+  /// paidRmb × purchaseRate.
+  paidBdt               Decimal?  @db.Decimal(14, 2)
+  /// Rate used for paidBdt, locked when the purchase is saved.
+  purchaseRate          Decimal?  @db.Decimal(12, 4)
 
   // Size of the sample parcel (entered by China)
   weightKg    Decimal? @db.Decimal(10, 3)
