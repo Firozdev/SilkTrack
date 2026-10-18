@@ -1,7 +1,7 @@
 import "server-only";
-import type { PaymentMethod, Prisma, SampleShippingMode, SampleStatus } from "@/generated/prisma/client";
+import type { PaymentMethod, Prisma, SampleShipWay, SampleShippingMode, SampleStatus, ShippingMethod } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { assertCan, can } from "@/lib/permissions";
+import { ForbiddenError, assertCan, can } from "@/lib/permissions";
 import { UserError } from "@/lib/action";
 import { D, allocate, cbmOf, money, rmbToBdt, sum } from "@/lib/money";
 import { docNo } from "@/lib/format";
@@ -54,9 +54,28 @@ async function endSampling(tx: Tx, orderId: string, actorId: string) {
 }
 export { label as sampleNo };
 
+type SampleRequestInput = { lines: { orderLineId: string; quantity: number }[]; note?: string };
+
 /** BD asks for a sample once China has quoted the request. */
-export async function requestSample(actor: Actor, orderId: string, input: { lines: { orderLineId: string; quantity: number }[]; note?: string }) {
+export async function requestSample(actor: Actor, orderId: string, input: SampleRequestInput) {
   assertCan(actor.role, "request:edit");
+  return createSampleRequest(orderId, input, { userId: actor.id });
+}
+
+/**
+ * The customer or their agent asks for a sample from the quotation in the
+ * portal. `customerId` is the owner checked by the caller (requireOwner); the
+ * quotation must have been sent to them.
+ */
+export async function requestSampleFromPortal(account: { id: string; name: string }, customerId: string, orderId: string, input: SampleRequestInput) {
+  const order = await prisma.order.findFirst({ where: { id: orderId, customerId }, select: { id: true } });
+  if (!order) throw new UserError("Not found");
+  const quoted = await prisma.estimate.count({ where: { orderId, status: { in: ["SENT_TO_CUSTOMER", "APPROVED"] } } });
+  if (!quoted) throw new UserError("Samples can be requested once you have the quotation");
+  return createSampleRequest(orderId, input, { accountId: account.id, name: account.name });
+}
+
+async function createSampleRequest(orderId: string, input: SampleRequestInput, by: { userId?: string; accountId?: string; name?: string }) {
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { lines: true, estimates: { where: { status: { not: "DRAFT" } }, select: { id: true } } } });
   if (!order) throw new UserError("Request not found");
   if (["CANCELLED", "DELIVERED"].includes(order.status) || order.requestStatus === "REJECTED") throw new UserError("This order is closed");
@@ -65,32 +84,35 @@ export async function requestSample(actor: Actor, orderId: string, input: { line
   if (!lines.length) throw new UserError("Choose at least one product and quantity for the sample");
   const valid = new Set(order.lines.filter((l) => l.status !== "CANCELLED").map((l) => l.id));
   if (lines.some((l) => !valid.has(l.orderLineId))) throw new UserError("Unknown product");
+  const userId = by.userId ?? null;
+  const note = input.note?.trim().slice(0, 1000) || undefined;
 
   const s = await prisma.$transaction(async (tx) => {
     if (order.requestStatus === "NEW" || order.requestStatus === "QUOTED") {
       await tx.order.update({ where: { id: orderId }, data: { requestStatus: "SAMPLING" } });
-      await logChanges(tx, { entityType: "Order", entityId: orderId, userId: actor.id, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: order.requestStatus, newValue: "SAMPLING" }] });
+      await logChanges(tx, { entityType: "Order", entityId: orderId, userId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: order.requestStatus, newValue: "SAMPLING" }] });
     }
     const byId = new Map(order.lines.map((l) => [l.id, l]));
     const s = await tx.sample.create({
       data: {
         orderId,
         customerId: order.customerId,
-        requestedById: actor.id,
-        requestNote: input.note,
+        requestedById: userId,
+        requestedByAccountId: by.accountId ?? null,
+        requestNote: note,
         lines: {
           create: lines.map((l) => {
             const ol = byId.get(l.orderLineId)!;
             return { orderLineId: ol.id, productName: ol.productName, variant: [ol.color, ol.size, ol.model].filter(Boolean).join(" · ") || null, quantity: l.quantity };
           }),
         },
-        events: { create: { status: "REQUESTED", message: `Sample requested${input.note ? `: ${input.note}` : ""}`, createdById: actor.id } },
+        events: { create: { status: "REQUESTED", message: `Sample requested${by.accountId ? ` in the portal by ${by.name}` : ""}${note ? `: ${note}` : ""}`, createdById: userId } },
       },
     });
-    await logChanges(tx, { entityType: "Sample", entityId: s.id, userId: actor.id, action: "CREATE" });
+    await logChanges(tx, { entityType: "Sample", entityId: s.id, userId, action: "CREATE" });
     return s;
   });
-  await notify("SAMPLE_REQUESTED", { sample: s }, { detail: `For ${docNo("order", order.number)}` }, { userId: actor.id });
+  await notify("SAMPLE_REQUESTED", { sample: s, customerId: order.customerId }, { detail: `For ${docNo("order", order.number)}`, by: by.accountId ? `${by.name} (portal)` : undefined }, { userId, accountId: by.accountId });
   return s;
 }
 
@@ -145,12 +167,23 @@ export type SampleInvoiceInput = {
   shippingRatePerCbmRmb?: string;
   serviceRmb?: string;
   paymentRequired: boolean;
+  /** How China will send it: hand carry, air or sea shipment. */
+  shipWay: SampleShipWay;
   size?: SampleSizeInput;
 };
 
-/** China prepares the customer's sample invoice and decides if payment must come first. */
+const SHIP_WAYS: SampleShipWay[] = ["HAND_CARRY", "AIR", "SEA"];
+const WAY_LABEL: Record<SampleShipWay, string> = { HAND_CARRY: "hand carry", AIR: "air shipment", SEA: "sea shipment" };
+
+/**
+ * China (or CS / Admin) prepare the customer's sample invoice: prices, the
+ * shipping charge to Bangladesh (a free ¥ amount) and the way it will be
+ * sent; and decide if payment must come first.
+ */
 export async function invoiceSample(actor: Actor, id: string, input: SampleInvoiceInput) {
-  assertCan(actor.role, "estimate:edit");
+  if (!can(actor.role, "estimate:edit") && !can(actor.role, "quote:edit")) throw new ForbiddenError("estimate:edit");
+  if (!SHIP_WAYS.includes(input.shipWay)) throw new UserError("Choose hand carry, air shipment or sea shipment");
+  for (const v of [input.productRmb, input.chinaShippingRmb, input.shippingToBdRmb, input.serviceRmb]) if (v && D(v).isNeg()) throw new UserError("Amounts can't be negative");
   const s = await load(id);
   if (!["REQUESTED", "INVOICED", "AWAITING_PAYMENT"].includes(s.status)) throw new UserError("The sample invoice can't be changed now");
   const { exchangeRateId, rateUsed } = await rateForConversion();
@@ -174,7 +207,7 @@ export async function invoiceSample(actor: Actor, id: string, input: SampleInvoi
         totalRmb,
       }),
     });
-    await move(tx, s, to, actor.id, `Sample invoice ¥${totalRmb.toFixed(2)} (৳${totalBdt.toFixed(2)} @ ${rateUsed.toString()}) – ${input.paymentRequired ? "payment required before purchase" : "no payment needed before purchase"}`, {
+    await move(tx, s, to, actor.id, `Sample invoice ¥${totalRmb.toFixed(2)} (৳${totalBdt.toFixed(2)} @ ${rateUsed.toString()}) · send by ${WAY_LABEL[input.shipWay]} – ${input.paymentRequired ? "payment required before purchase" : "no payment needed before purchase"}`, {
       productRmb: input.productRmb,
       chinaShippingRmb: input.chinaShippingRmb ?? null,
       shippingToBdRmb: shippingToBdRmb ?? null,
@@ -187,11 +220,12 @@ export async function invoiceSample(actor: Actor, id: string, input: SampleInvoi
       rateUsed,
       totalBdt,
       paymentRequired: input.paymentRequired,
+      shipWay: input.shipWay,
       invoicedById: actor.id,
       invoicedAt: new Date(),
     });
   });
-  await notify("SAMPLE_INVOICED", { sample: s, ref: `${label(s)} (${ref(s)})` }, { total: totalBdt.toFixed(2), paymentRequired: input.paymentRequired }, { userId: actor.id });
+  await notify("SAMPLE_INVOICED", { sample: s, customerId: s.customerId, ref: `${label(s)} (${ref(s)})` }, { total: totalBdt.toFixed(2), paymentRequired: input.paymentRequired }, { userId: actor.id });
 }
 
 /** BD confirms the customer paid for the sample. */
@@ -222,6 +256,9 @@ export function sampleAmounts(s: AmountFields, paidBdt: Prisma.Decimal | string 
     balance: balance.isNeg() ? D(0) : balance,
     /** Still needed before China may buy. */
     upfrontDue: beforePurchase.sub(paid).isNeg() ? D(0) : beforePurchase.sub(paid),
+    /** Payments count towards the product first, then the shipping. */
+    productDue: beforePurchase.sub(paid).isNeg() ? D(0) : beforePurchase.sub(paid),
+    shippingDue: paid.gt(beforePurchase) ? (onDelivery.sub(paid.sub(beforePurchase)).isNeg() ? D(0) : onDelivery.sub(paid.sub(beforePurchase))) : onDelivery,
   };
 }
 
@@ -256,11 +293,18 @@ export async function recordSamplePayment(actor: Actor, id: string, input: { amo
     if (released) await move(tx, s, "PAID", actor.id, "Purchase amount paid – China can buy the sample");
     return p;
   });
-  if (released) await notify("SAMPLE_PAID", { sample: s }, { detail: ref(s) }, { userId: actor.id });
+  if (released) await notify("SAMPLE_PAID", { sample: s, customerId: s.customerId }, { detail: ref(s) }, { userId: actor.id });
   return payment;
 }
 
-export type SamplePurchaseInput = { supplierName: string; supplierOrderNo?: string; purchaseTrackingUrl: string; expectedAtWarehouseAt: Date };
+export type SamplePurchaseInput = {
+  supplierName: string;
+  supplierOrderNo?: string;
+  purchaseTrackingUrl: string;
+  expectedAtWarehouseAt: Date;
+  /** Total RMB China paid the supplier (required, > 0). */
+  paidRmb: string;
+};
 
 export async function purchaseSample(actor: Actor, id: string, input: SamplePurchaseInput) {
   assertCan(actor.role, "purchase:edit");
@@ -268,21 +312,48 @@ export async function purchaseSample(actor: Actor, id: string, input: SamplePurc
   if (s.status === "AWAITING_PAYMENT") throw new UserError("Waiting for the BD team to confirm the sample payment");
   if (!["INVOICED", "PAID"].includes(s.status)) throw new UserError("Invoice the sample before purchasing");
   if (!/^https?:\/\//i.test(input.purchaseTrackingUrl.trim())) throw new UserError("Tracking URL must start with http:// or https://");
-  await prisma.$transaction((tx) =>
-    move(tx, s, "PURCHASED", actor.id, `Sample purchased from ${input.supplierName}`, {
+  const t = input.paidRmb?.trim() ?? "";
+  if (!/^\d+(\.\d+)?$/.test(t) || money(t).lte(0)) throw new UserError("Enter the total RMB paid to the supplier");
+  const paidRmb = money(t);
+  const { rateUsed } = await rateForConversion();
+  const paidBdt = rmbToBdt(paidRmb, rateUsed);
+  // Compared with what was invoiced for buying it (sample price + China shipping).
+  const invoicedRmb = sum([s.productRmb, s.chinaShippingRmb]);
+  await prisma.$transaction(async (tx) => {
+    await logChanges(tx, {
+      entityType: "Sample",
+      entityId: s.id,
+      userId: actor.id,
+      action: "UPDATE",
+      changes: [
+        { field: "paidRmb", oldValue: s.paidRmb?.toFixed(2) ?? null, newValue: paidRmb.toFixed(2) },
+        { field: "purchaseRate", oldValue: s.purchaseRate?.toString() ?? null, newValue: rateUsed.toString() },
+        { field: "paidBdt", oldValue: s.paidBdt?.toFixed(2) ?? null, newValue: paidBdt.toFixed(2) },
+        ...(paidRmb.equals(invoicedRmb) ? [] : [{ field: "paidVsInvoicedRmb", oldValue: null, newValue: paidRmb.sub(invoicedRmb).toFixed(2) }]),
+      ],
+    });
+    await move(tx, s, "PURCHASED", actor.id, `Sample purchased from ${input.supplierName}`, {
+      paidRmb,
+      paidBdt,
+      purchaseRate: rateUsed,
       supplierName: input.supplierName,
       supplierOrderNo: input.supplierOrderNo ?? null,
       purchaseTrackingUrl: input.purchaseTrackingUrl.trim(),
       expectedAtWarehouseAt: input.expectedAtWarehouseAt,
       purchasedById: actor.id,
       purchasedAt: new Date(),
-    }),
-  );
+    });
+  });
   await notify("SAMPLE_PURCHASED", { sample: s }, { detail: ref(s) }, { userId: actor.id });
 }
 
+/** The ways China sends a sample: hand carry, or an air / sea weekly shipment. */
+export const SAMPLE_SHIP_MODES: SampleShippingMode[] = ["HAND_CARRY", "WEEKLY_SHIPMENT"];
+
 export type SampleShipInput = {
   shippingMode: SampleShippingMode;
+  /** Air or sea – required for a weekly shipment; the shipment must match. */
+  method?: ShippingMethod;
   carrierName?: string;
   trackingNo?: string;
   trackingUrl?: string;
@@ -301,18 +372,19 @@ export async function shipSample(actor: Actor, id: string, input: SampleShipInpu
   assertCan(actor.role, "purchase:edit");
   const s = await load(id);
   if (!["PURCHASED", "SHIPPED"].includes(s.status)) throw new UserError("Purchase the sample before shipping it");
+  if (!SAMPLE_SHIP_MODES.includes(input.shippingMode)) throw new UserError("Choose hand carry, air shipment or sea shipment");
   const planned = input.shippingMode === "WEEKLY_SHIPMENT";
   let sh: { id: string; code: string; etaBd: Date | null } | null = null;
   if (planned) {
     if (!input.shipmentId) throw new UserError("Choose the planned shipment");
     const found = await prisma.shipment.findUnique({ where: { id: input.shipmentId } });
     if (!found || (s.shipmentId !== found.id && !isAccepting(found))) throw new UserError("That shipment is not accepting items");
+    if (!input.method) throw new UserError("Choose air or sea shipment");
+    if (found.method !== input.method) throw new UserError(`That is not ${input.method === "AIR" ? "an air" : "a sea"} shipment`);
     sh = found;
-  } else if (input.shippingMode === "EXPRESS_COURIER" && !input.trackingNo) {
-    throw new UserError("Enter the courier tracking number");
   }
   const size = sampleSize(input.size);
-  const how = sh ? `planned shipment ${sh.code}` : [input.shippingMode.replace(/_/g, " ").toLowerCase(), input.carrierName, input.trackingNo].filter(Boolean).join(" · ");
+  const how = sh ? `${input.method === "AIR" ? "air" : "sea"} shipment ${sh.code}` : [input.shippingMode.replace(/_/g, " ").toLowerCase(), input.carrierName, input.trackingNo].filter(Boolean).join(" · ");
   await prisma.$transaction(async (tx) => {
     await move(tx, s, "SHIPPED", actor.id, `Sent to Bangladesh by ${how}`, {
       shippingMode: input.shippingMode,

@@ -84,7 +84,7 @@ function step(fn: (u: Awaited<ReturnType<typeof requireUser>>, id: string, fd: F
   });
 }
 
-export const submitAction = step((u, id) => submitQuotation(u, id), "Submitted to the Bangladesh team.");
+export const submitAction = step((u, id) => submitQuotation(u, id), "Sent to the customer – they and their agent are notified.");
 export const sendAction = step((u, id) => sendQuotationToCustomer(u, id), "Sent to customer – request is now Quoted.");
 export const approveAction = step((u, id) => approveQuotation(u, id), "Customer approved – the order is in the China purchase queue.");
 export const rejectAction = step((u, id) => rejectQuotation(u, id), "Marked as rejected.");

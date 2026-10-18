@@ -60,7 +60,7 @@ export function QuotationForm({ orderId, lines, initial, canSetSelling, rate }: 
   const selling = lines.reduce((a, l) => a + n(vals[l.id].sellingUnitBdt) * l.quantity, 0);
 
   return (
-    <ActionForm action={saveQuotationAction} submitLabel="Save & submit to Bangladesh" secondary={{ label: "Save draft", name: "intent", value: "draft" }} className="max-w-6xl">
+    <ActionForm action={saveQuotationAction} submitLabel="Save & send to customer" secondary={{ label: "Save draft", name: "intent", value: "draft" }} className="max-w-6xl">
       <input type="hidden" name="orderId" value={orderId} />
       <input type="hidden" name="intent" value="submit" />
       <Card title="Products">

@@ -16,8 +16,11 @@ import { SendInvoice } from "./send-invoice";
 import { acceptingShipments } from "@/server/shipments";
 import { cancelAction, deliverAction, paymentAction, photoAction, purchaseAction, receiveAction } from "../actions";
 import { SampleInvoiceForm, SampleShipForm } from "./sample-forms";
+import { ScreenshotInput } from "../../purchasing/screenshot-input";
 import { Step, Waiting } from "./step";
 import { CustomerPanel } from "../../customer-panel";
+
+const WAY = { HAND_CARRY: "Hand carry", AIR: "Air shipment", SEA: "Sea shipment" } as const;
 
 export default async function SamplePage({ params }: PageProps<"/samples/[id]">) {
   const user = await requireUser();
@@ -28,9 +31,10 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
       order: { select: { id: true, number: true } },
       customer: { select: { id: true, name: true, code: true, phone: true, email: true } },
       requestedBy: { select: { name: true } },
+      requestedByAccount: { select: { name: true, kind: true } },
       invoicedBy: { select: { name: true } },
       purchasedBy: { select: { name: true } },
-      shipment: { select: { id: true, code: true } },
+      shipment: { select: { id: true, code: true, method: true } },
       lines: { include: { attachments: { select: { id: true, fileName: true, mimeType: true, uploadedByAccountId: true } } } },
       events: { orderBy: { occurredAt: "asc" }, include: { createdBy: { select: { name: true } } } },
       payments: { orderBy: { paidAt: "asc" } },
@@ -41,6 +45,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
   const history = await recordHistory({ sampleId: s.id }, "staff");
   const china = can(user.role, "purchase:edit");
   const bd = can(user.role, "request:edit");
+  const invoicer = can(user.role, "estimate:edit") || can(user.role, "quote:edit");
   const hid = <input type="hidden" name="id" value={s.id} />;
   const open = !["DELIVERED", "CANCELLED"].includes(s.status);
   const shipments = china && ["PURCHASED", "SHIPPED"].includes(s.status) ? await acceptingShipments() : [];
@@ -57,7 +62,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
         title={`${sampleNo(s)} · ${s.order ? docNo("order", s.order.number) : "No request"}`}
         subtitle={
           <span className="flex flex-wrap items-center gap-2">
-            <Badge value={s.status} /> <A href={`/customers/${s.customer.id}`}>{s.customer.name} ({s.customer.code})</A> · requested by {s.requestedBy.name}, {fmtDateTime(s.requestedAt, user.timezone)}
+            <Badge value={s.status} /> <A href={`/customers/${s.customer.id}`}>{s.customer.name} ({s.customer.code})</A> · requested by {s.requestedBy?.name ?? (s.requestedByAccount ? `${s.requestedByAccount.name} (${s.requestedByAccount.kind === "AGENT" ? "agent" : "customer"}, portal)` : "—")}, {fmtDateTime(s.requestedAt, user.timezone)}
           </span>
         }
         actions={s.order && <A href={`/requests/${s.order.id}`}>Open request →</A>}
@@ -85,18 +90,18 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
           </Card>
 
           <div className="space-y-2">
-            {/* 1. Invoice (China) */}
+            {/* 1. Invoice (CS / Admin) */}
             <Step
               n={1}
               title="Sample invoice"
               state={s.totalRmb ? "done" : open ? "current" : "todo"}
               summary={
                 s.totalRmb
-                  ? `${fmtRmb(s.totalRmb)} · ${fmtBdt(s.totalBdt)} · ${s.paymentRequired ? "payment first" : "no payment needed"}`
-                  : "China prepares the invoice"
+                  ? `${fmtRmb(s.totalRmb)} · ${fmtBdt(s.totalBdt)} · ${s.paymentRequired ? "payment first" : "no payment needed"}${s.shipWay ? ` · ${WAY[s.shipWay]}` : ""}`
+                  : "China (or CS / Admin) prepares the invoice"
               }
             >
-              {china && open && ["REQUESTED", "INVOICED", "AWAITING_PAYMENT"].includes(s.status) ? (
+              {invoicer && open && ["REQUESTED", "INVOICED", "AWAITING_PAYMENT"].includes(s.status) ? (
                 <SampleInvoiceForm
                   id={s.id}
                   init={{
@@ -105,13 +110,11 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                     shippingToBdRmb: str(s.shippingToBdRmb),
                     serviceRmb: str(s.serviceRmb),
                     paymentRequired: s.paymentRequired,
-                    shippingRatePerKgRmb: str(s.shippingRatePerKgRmb),
-                    shippingRatePerCbmRmb: str(s.shippingRatePerCbmRmb),
+                    shipWay: s.shipWay,
                   }}
-                  size={sizeInit}
                 />
               ) : s.totalRmb ? (
-                <p className="text-sm text-gray-600">See the invoice details on the right. {china && "The invoice can no longer be changed."}</p>
+                <p className="text-sm text-gray-600">See the invoice details on the right. {invoicer && "The invoice can no longer be changed."}</p>
               ) : (
                 <Waiting who="China" what="prepare the sample invoice" />
               )}
@@ -144,7 +147,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                 <ActionForm action={paymentAction} submitLabel="Confirm payment received" inline resetOnSuccess>
                   {hid}
                   <p className="w-full text-xs text-gray-500">
-                    Before purchase {fmtBdt(amt.beforePurchase)} · on delivery {fmtBdt(amt.onDelivery)} · paid {fmtBdt(paid)} · balance {fmtBdt(amt.balance)}
+                    Product {fmtBdt(amt.beforePurchase)} (due {fmtBdt(amt.productDue)}) · shipping {fmtBdt(amt.onDelivery)} (due {fmtBdt(amt.shippingDue)}) · paid {fmtBdt(paid)} · balance {fmtBdt(amt.balance)}
                   </p>
                   <input name="amountBdt" required defaultValue={(amt.upfrontDue.gt(0) ? amt.upfrontDue : amt.balance).toString()} inputMode="decimal" className={`${inputCls} max-w-[9rem]`} aria-label="Amount BDT" />
                   <select name="method" className={`${inputCls} max-w-[9rem]`} aria-label="Method">
@@ -177,6 +180,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                     ["Supplier order no.", s.supplierOrderNo],
                     ["Order tracking", s.purchaseTrackingUrl ? <a key="u" href={s.purchaseTrackingUrl} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">Open ↗</a> : "—"],
                     ["Purchased", `${fmtDateTime(s.purchasedAt, user.timezone)} · ${s.purchasedBy?.name ?? ""}`],
+                    ["Paid to supplier", s.paidRmb ? `${fmtRmb(s.paidRmb)} · ${fmtBdt(s.paidBdt)} @ ${fmtRate(s.purchaseRate)}` : "—"],
                   ]}
                 />
               ) : china ? (
@@ -195,6 +199,12 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                     <Field label="Estimated receive date (China) *">
                       <input name="expectedAtWarehouseAt" type="date" required className={inputCls} />
                     </Field>
+                    <Field label="Total RMB paid to supplier ¥ *" hint={s.productRmb ? `Invoiced: sample ${fmtRmb(s.productRmb)}${s.chinaShippingRmb ? ` + China shipping ${fmtRmb(s.chinaShippingRmb)}` : ""}` : undefined}>
+                      <input name="paidRmb" required inputMode="decimal" placeholder="0.00" className={inputCls} />
+                    </Field>
+                    <Field label="Payment screenshot (optional)">
+                      <ScreenshotInput />
+                    </Field>
                   </div>
                 </ActionForm>
               ) : (
@@ -209,7 +219,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
               state={s.shippedAt ? "done" : open && s.status === "PURCHASED" ? "current" : "todo"}
               summary={
                 s.shippedAt
-                  ? `${s.shipment ? `Planned shipment ${s.shipment.code}` : s.shippingMode ? humanize(s.shippingMode) : ""}${s.trackingNo ? ` · ${s.trackingNo}` : ""} · ETA ${fmtDay(s.etaBd)}`
+                  ? `${s.shipment ? `${s.shipment.method === "AIR" ? "Air" : "Sea"} shipment ${s.shipment.code}` : s.shippingMode ? humanize(s.shippingMode) : ""}${s.trackingNo ? ` · ${s.trackingNo}` : ""} · ETA ${fmtDay(s.etaBd)}`
                   : undefined
               }
             >
@@ -217,7 +227,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                 <SampleShipForm
                   id={s.id}
                   init={{
-                    shippingMode: s.shippingMode,
+                    way: s.shippingMode === "HAND_CARRY" ? "HAND_CARRY" : s.shipment ? s.shipment.method : s.shipWay,
                     shipmentId: s.shipmentId,
                     carrierName: s.carrierName ?? "",
                     trackingNo: s.trackingNo ?? "",
@@ -226,8 +236,8 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                   }}
                   size={sizeInit}
                   shipments={[
-                    ...(s.shipment && !shipments.some((x) => x.id === s.shipment!.id) ? [{ id: s.shipment.id, label: s.shipment.code }] : []),
-                    ...shipments.map((x) => ({ id: x.id, label: `${x.code} · cut-off ${fmtDay(x.cutoffDate)} · ETA ${fmtDay(x.etaBd)}` })),
+                    ...(s.shipment && !shipments.some((x) => x.id === s.shipment!.id) ? [{ id: s.shipment.id, label: s.shipment.code, method: s.shipment.method }] : []),
+                    ...shipments.map((x) => ({ id: x.id, label: `${x.code} · cut-off ${fmtDay(x.cutoffDate)} · ETA ${fmtDay(x.etaBd)}`, method: x.method })),
                   ]}
                 />
               ) : s.shippedAt ? (
@@ -353,8 +363,9 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                 ["Total", <b key="t">{fmtRmb(s.totalRmb)}</b>],
                 ["Rate", fmtRate(s.rateUsed)],
                 ["Total BDT", <b key="b">{fmtBdt(s.totalBdt)}</b>],
-                ["Before purchase", fmtBdt(amt.beforePurchase)],
-                ["On delivery (shipping)", fmtBdt(amt.onDelivery)],
+                ["Product (before purchase)", `${fmtBdt(amt.beforePurchase)} · due ${fmtBdt(amt.productDue)}`],
+                ["Shipping to BD", `${fmtBdt(amt.onDelivery)} · due ${fmtBdt(amt.shippingDue)}`],
+                ["Ship by", s.shipWay ? WAY[s.shipWay] : "—"],
                 ["Payment first?", s.paymentRequired === null ? "—" : s.paymentRequired ? "Yes" : "No"],
                 ["Invoiced", s.invoicedAt ? `${fmtDateTime(s.invoicedAt, user.timezone)} · ${s.invoicedBy?.name ?? ""}` : "—"],
                 ...(bd
@@ -373,8 +384,9 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                 ["Order tracking", s.purchaseTrackingUrl ? <a key="u" href={s.purchaseTrackingUrl} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">Open ↗</a> : "—"],
                 ["Est. receive (China)", fmtDay(s.expectedAtWarehouseAt)],
                 ["Purchased", s.purchasedAt ? `${fmtDateTime(s.purchasedAt, user.timezone)} · ${s.purchasedBy?.name ?? ""}` : "—"],
+                ["Paid to supplier", s.paidRmb ? `${fmtRmb(s.paidRmb)} · ${fmtBdt(s.paidBdt)} @ ${fmtRate(s.purchaseRate)}` : "—"],
                 ["Size", s.weightKg || s.cbm ? `${fmtKg(s.weightKg)} · ${s.cartonCount ?? 1} ctn${s.lengthCm ? ` · ${fmtNum(s.lengthCm, 1)}×${fmtNum(s.widthCm, 1)}×${fmtNum(s.heightCm, 1)} cm` : ""} · ${fmtCbm(s.cbm)}` : "—"],
-                ["Sent by", s.shippingMode ? (s.shippingMode === "WEEKLY_SHIPMENT" ? "Planned shipment" : humanize(s.shippingMode)) : "—"],
+                ["Sent by", s.shippingMode ? (s.shippingMode === "WEEKLY_SHIPMENT" ? `${s.shipment?.method === "SEA" ? "Sea" : "Air"} shipment` : humanize(s.shippingMode)) : "—"],
                 ["Shipment", s.shipment ? <A key="s" href={`/shipments/${s.shipment.id}`}>{s.shipment.code}</A> : "—"],
                 ["Carrier", s.carrierName],
                 ["Tracking", s.trackingUrl ? <a key="t" href={s.trackingUrl} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">{s.trackingNo ?? "Open ↗"}</a> : s.trackingNo],

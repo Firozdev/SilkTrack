@@ -31,10 +31,20 @@ export const DONE = { trackingUrl: "https://trade.1688.com/order/123", expectedA
 
 /**
  * Take a request through the China quotation to customer approval:
- * China quotes and submits → BD sets selling prices → sent → approved.
+ * China quotes → BD sets selling prices → sent → approved (the older BD-priced
+ * path, so tests can use round selling prices; China's direct send is tested
+ * in quote-direct.test.ts).
  */
+/**
+ * A quotation waiting at "Submitted by China", as quotations were before China
+ * sent them directly – BD then prices and sends it (still supported).
+ */
+export async function submitAsLegacy(estimateId: string) {
+  await prisma.estimate.update({ where: { id: estimateId }, data: { status: "SUBMITTED_BY_CHINA", submittedAt: new Date() } });
+}
+
 export async function quoteAndApprove(orderId: string, unitPriceRmb = "10", sellingPerLine = "1000", size: { cartonCount?: number; lengthCm?: string; widthCm?: string; heightCm?: string; unitWeightKg?: string } = {}) {
-  const { saveQuotation, submitQuotation, setSellingPrices, sendQuotationToCustomer, approveQuotation } = await import("@/server/estimates");
+  const { saveQuotation, setSellingPrices, sendQuotationToCustomer, approveQuotation } = await import("@/server/estimates");
   const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: { orderBy: { lineNo: "asc" } } } });
   const china = (await prisma.user.findFirst({ where: { role: "PURCHASE" } })) ?? (await makeUser("PURCHASE"));
   const bd = (await prisma.user.findFirst({ where: { role: "CS" } })) ?? (await makeUser("CS"));
@@ -45,7 +55,7 @@ export async function quoteAndApprove(orderId: string, unitPriceRmb = "10", sell
     validUntil: new Date("2099-01-01T00:00:00Z"),
     lines: order.lines.map((l) => ({ orderLineId: l.id, unitPriceRmb, unitWeightKg: "0.5", ...size })),
   });
-  await submitQuotation(china, e.id);
+  await submitAsLegacy(e.id);
   const lines = await prisma.estimateLine.findMany({ where: { estimateId: e.id } });
   await setSellingPrices(bd, e.id, lines.map((l) => ({ lineId: l.id, sellingPriceBdt: sellingPerLine })));
   await sendQuotationToCustomer(bd, e.id);

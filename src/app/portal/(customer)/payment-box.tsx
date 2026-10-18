@@ -6,14 +6,42 @@ import { D, type Decimal } from "@/lib/money";
 import { portalPaymentAction, portalReceiptAction } from "../actions";
 import { fill, type Dict, type Lang } from "../i18n";
 import { portalLabel } from "../labels";
+import { PayAmount, type PayChoice } from "./pay-amount";
 
 type Kind = "order" | "shipping" | "sample";
 type Submission = { id: string; number: number; amountBdt: Decimal; method: string; reference: string; paidAt: Date; status: "PENDING" | "APPROVED" | "REJECTED"; rejectReason: string | null };
 const METHODS = ["BKASH", "NAGAD", "ROCKET", "BANK_TRANSFER", "CASH", "OTHER"];
 const SUB_CLS = { PENDING: "text-amber-700", APPROVED: "text-green-700", REJECTED: "text-red-700" } as const;
 
+/** Pending reports count towards the product first, then the shipping. */
+function payChoices(t: Dict, parts: { productDue: Decimal; shippingDue: Decimal }, pending: Decimal): PayChoice[] {
+  const product = D(parts.productDue).sub(pending);
+  const shipping = D(parts.shippingDue).sub(product.isNeg() ? product.neg() : 0);
+  const p = product.isNeg() ? D(0) : product;
+  const sh = shipping.isNeg() ? D(0) : shipping;
+  if (p.gt(0)) return [{ key: "PRODUCT", label: t.payProductOnly, amount: p.toFixed(2) }, ...(sh.gt(0) ? [{ key: "BOTH", label: t.payProductShipping, amount: p.add(sh).toFixed(2) }] : [])];
+  return sh.gt(0) ? [{ key: "SHIPPING", label: t.payShippingOnly, amount: sh.toFixed(2) }] : [];
+}
+
 /** "I have paid" form plus the payments the customer already reported. */
-export function PaymentBox({ t, lang, kind, id, due, submissions }: { t: Dict; lang: Lang; kind: Kind; id: string; due: Decimal | null; submissions: Submission[] }) {
+export function PaymentBox({
+  t,
+  lang,
+  kind,
+  id,
+  due,
+  submissions,
+  parts,
+}: {
+  t: Dict;
+  lang: Lang;
+  kind: Kind;
+  id: string;
+  due: Decimal | null;
+  submissions: Submission[];
+  /** Sample: product and shipping still due – the customer pays product only or product + shipping. */
+  parts?: { productDue: Decimal; shippingDue: Decimal };
+}) {
   const pending = submissions.filter((s) => s.status === "PENDING").reduce((a, s) => a.add(s.amountBdt), D(0));
   const open = due ? due.sub(pending) : null;
   if (!submissions.length && !(due && due.gt(0))) return null;
@@ -33,9 +61,7 @@ export function PaymentBox({ t, lang, kind, id, due, submissions }: { t: Dict; l
             <input type="hidden" name="kind" value={kind} />
             <input type="hidden" name="id" value={id} />
             <div className="grid gap-2 sm:grid-cols-2">
-              <Field label={t.amount}>
-                <input name="amountBdt" required inputMode="decimal" defaultValue={open.toFixed(2)} className={inputCls} />
-              </Field>
+              <PayAmount label={t.amount} legend={t.payFor} choices={parts && payChoices(t, parts, pending)} initial={open.toFixed(2)} />
               <Field label={t.method}>
                 <select name="method" className={inputCls}>
                   {METHODS.map((m) => (

@@ -20,9 +20,9 @@ import { portalAttachment, portalDashboard, portalOrder, portalSample, portalShi
 import { MAX_FILES_PER_UPLOAD, saveAttachments } from "@/lib/uploads";
 import { createPortalRequest, createRequest } from "@/server/requests";
 import { createPortalShippingOrder, updatePortalShippingTracking } from "@/server/shipping-orders";
-import { decidePortalQuotation, saveQuotation, setSellingPrices, submitQuotation, sendQuotationToCustomer } from "@/server/estimates";
+import { decidePortalQuotation, saveQuotation, setSellingPrices, sendQuotationToCustomer } from "@/server/estimates";
 import type { Actor } from "@/server/actor";
-import { makeRate, makeUser, resetDb } from "../helpers";
+import { makeRate, makeUser, resetDb, submitAsLegacy } from "../helpers";
 
 let admin: Actor, cs: Actor, china: Actor;
 const PW = "secret-pass-1";
@@ -184,7 +184,7 @@ describe("Customer portal – data", () => {
     const { order } = await createPortalRequest(a.customerId!, { shippingMethod: "AIR", lines: [{ productName: "Lamp", quantity: 10, links: [] }] });
     const lines = await prisma.orderLine.findMany({ where: { orderId: order.id } });
     const e = await saveQuotation(china, order.id, { shippingMethod: "AIR", shippingRatePerKgRmb: "40", validUntil: new Date("2099-01-01T00:00:00Z"), lines: [{ orderLineId: lines[0].id, unitPriceRmb: "12.5", unitWeightKg: "0.3" }] });
-    await submitQuotation(china, e.id);
+    await submitAsLegacy(e.id);
     // Submitted but not sent → not visible
     expect((await portalOrder(a.customerId!, order.id))?.quote).toBeNull();
     const el = await prisma.estimateLine.findMany({ where: { estimateId: e.id } });
@@ -211,7 +211,7 @@ describe("Customer portal – files, quote approval", () => {
     const { order } = await createPortalRequest(customerId, { shippingMethod: "AIR", lines: [{ productName: "Lamp", quantity: 10, links: [] }] });
     const lines = await prisma.orderLine.findMany({ where: { orderId: order.id } });
     const e = await saveQuotation(china, order.id, { shippingMethod: "AIR", shippingRatePerKgRmb: "40", validUntil: new Date("2099-01-01T00:00:00Z"), lines: [{ orderLineId: lines[0].id, unitPriceRmb: "12.5", unitWeightKg: "0.3" }] });
-    await submitQuotation(china, e.id);
+    await submitAsLegacy(e.id);
     const el = await prisma.estimateLine.findMany({ where: { estimateId: e.id } });
     await setSellingPrices(cs, e.id, el.map((l) => ({ lineId: l.id, sellingPriceBdt: "4500" })));
     await sendQuotationToCustomer(cs, e.id);

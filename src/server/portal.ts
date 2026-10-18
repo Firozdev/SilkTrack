@@ -6,6 +6,7 @@ import { D, sum, type Decimal } from "@/lib/money";
 import { isoWeekStart } from "@/lib/dates";
 import { customerLedger } from "./ledger";
 import { quoteBreakdown } from "./quote-breakdown";
+import { sampleAmounts } from "./samples";
 
 /**
  * Customer portal reads. Every query is scoped to the signed-in customer and
@@ -135,7 +136,13 @@ export async function portalOrder(customerId: string, orderId: string) {
           shippingMethod: true,
           grossWeightKg: true,
           cbm: true,
-          lines: { select: { id: true, productName: true, quantity: true, sellingPriceBdt: true, orderLineId: true } },
+          totalRmb: true,
+          shippingRmb: true,
+          rmbSubtotal: true,
+          rateUsed: true,
+          productCostBdt: true,
+          exchangeRate: { select: { effectiveDate: true } },
+          lines: { select: { id: true, productName: true, quantity: true, sellingPriceBdt: true, orderLineId: true, unitPriceRmb: true, lineTotalRmb: true } },
           attachments: quoteImageSelect,
         },
       },
@@ -152,7 +159,24 @@ export async function portalOrder(customerId: string, orderId: string) {
   });
   if (!o) return null;
   const e = o.estimates[0];
-  return { ...o, paid: paidOf(o.payments), quote: e ? { ...e, estimateId: e.id, breakdown: await quoteBreakdown(e) } : null };
+  // The raw estimate (with RMB) is replaced by `quote` below.
+  const { estimates: _estimates, ...order } = o;
+  void _estimates;
+  if (!e) return { ...order, paid: paidOf(o.payments), quote: null };
+  // RMB prices are shown only for quotations China sent directly (selling =
+  // RMB × rate, no markup). Older quotations priced by BD keep showing BDT
+  // only, so their cost is never revealed.
+  const { productCostBdt, totalRmb, shippingRmb, rmbSubtotal, rateUsed, exchangeRate, lines, ...rest } = e;
+  const direct = !!e.grandTotalBdt && e.grandTotalBdt.equals(productCostBdt);
+  const productsRmb = totalRmb.sub(shippingRmb);
+  const quote = {
+    ...rest,
+    lines: lines.map(({ unitPriceRmb, lineTotalRmb, ...l }) => ({ ...l, ...(direct ? { rmbPrice: { unit: unitPriceRmb, total: lineTotalRmb } } : {}) })),
+    rmb: direct ? { products: rmbSubtotal, chinaCharges: productsRmb.sub(rmbSubtotal), total: productsRmb, rate: rateUsed, rateDate: exchangeRate.effectiveDate } : null,
+    estimateId: e.id,
+    breakdown: await quoteBreakdown(e),
+  };
+  return { ...order, paid: paidOf(o.payments), quote };
 }
 
 export async function portalShippingOrder(customerId: string, id: string) {
@@ -219,6 +243,11 @@ export async function portalSample(customerId: string, id: string) {
       order: { select: { id: true, number: true } },
       lines: { select: { id: true, productName: true, variant: true, quantity: true, attachments: fileSelect } },
       totalBdt: true,
+      productRmb: true,
+      chinaShippingRmb: true,
+      serviceRmb: true,
+      shippingToBdRmb: true,
+      shipWay: true,
       invoicedAt: true,
       shippingMode: true,
       carrierName: true,
@@ -236,9 +265,11 @@ export async function portalSample(customerId: string, id: string) {
     },
   });
   if (!s) return null;
+  const { productRmb, chinaShippingRmb, serviceRmb, shippingToBdRmb, ...rest } = s;
   const paid = paidOf(s.payments);
-  const balance = D(s.totalBdt).sub(paid);
-  return { ...s, paid, balance: balance.isNeg() ? D(0) : balance };
+  // Only the BDT split leaves the server, never the RMB cost lines.
+  const a = sampleAmounts({ totalBdt: s.totalBdt, productRmb, chinaShippingRmb, serviceRmb, shippingToBdRmb }, paid);
+  return { ...rest, paid, balance: a.balance, parts: { product: a.beforePurchase, shipping: a.onDelivery, productDue: a.productDue, shippingDue: a.shippingDue } };
 }
 
 // ───────────────────────── Shipment box ─────────────────────────

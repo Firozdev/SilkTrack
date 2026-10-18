@@ -7,10 +7,10 @@ import { portalAttachment } from "@/server/portal";
 import { amountDue, approveSubmission, duplicateReferences, rejectSubmission, submitPayment } from "@/server/payment-submissions";
 import { confirmReceipt } from "@/server/receipts";
 import { createPortalRequest } from "@/server/requests";
-import { saveQuotation, setSellingPrices, submitQuotation, sendQuotationToCustomer, decidePortalQuotation } from "@/server/estimates";
+import { saveQuotation, setSellingPrices, sendQuotationToCustomer, decidePortalQuotation } from "@/server/estimates";
 import { assignShippingOrder, createPortalShippingOrder, dispatchShipping, invoiceShipping, receiveShippingBd, receiveShippingChina, recordShippingPayment } from "@/server/shipping-orders";
 import type { Actor } from "@/server/actor";
-import { makeRate, makeUser, resetDb } from "../helpers";
+import { makeRate, makeUser, resetDb, submitAsLegacy } from "../helpers";
 
 let admin: Actor, cs: Actor, china: Actor;
 const PAID = new Date("2026-10-05T00:00:00Z");
@@ -103,7 +103,7 @@ describe("Customer-reported payments", () => {
     const { order } = await createPortalRequest(k.customerId, { shippingMethod: "AIR", lines: [{ productName: "Lamp", quantity: 10, links: [] }] });
     const lines = await prisma.orderLine.findMany({ where: { orderId: order.id } });
     const e = await saveQuotation(china, order.id, { shippingMethod: "AIR", shippingRatePerKgRmb: "40", validUntil: new Date("2099-01-01T00:00:00Z"), lines: [{ orderLineId: lines[0].id, unitPriceRmb: "12.5", unitWeightKg: "0.3" }] });
-    await submitQuotation(china, e.id);
+    await submitAsLegacy(e.id);
     const el = await prisma.estimateLine.findMany({ where: { estimateId: e.id } });
     await setSellingPrices(cs, e.id, el.map((l) => ({ lineId: l.id, sellingPriceBdt: "4500" })));
     await sendQuotationToCustomer(cs, e.id);

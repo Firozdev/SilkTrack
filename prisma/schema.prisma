@@ -205,6 +205,13 @@ enum SampleStatus {
   CANCELLED
 }
 
+/// How China plans to send a sample, chosen on the sample invoice.
+enum SampleShipWay {
+  HAND_CARRY
+  AIR
+  SEA
+}
+
 /// Shipping-only service: the customer buys in China themselves; we receive,
 /// optionally QA-test, ship, invoice and deliver.
 enum ShippingOrderStatus {
@@ -808,8 +815,11 @@ model Sample {
   customerId    String
   customer      Customer     @relation(fields: [customerId], references: [id])
   status        SampleStatus @default(REQUESTED)
-  requestedById String
-  requestedBy   User         @relation("SampleRequestedBy", fields: [requestedById], references: [id])
+  /// Staff user who asked for it, or the portal login (customer / agent) – one of the two.
+  requestedById        String?
+  requestedBy          User?          @relation("SampleRequestedBy", fields: [requestedById], references: [id])
+  requestedByAccountId String?
+  requestedByAccount   PortalAccount? @relation("SampleRequestedByAccount", fields: [requestedByAccountId], references: [id])
   requestNote   String?
   requestedAt   DateTime     @default(now())
 
@@ -828,6 +838,8 @@ model Sample {
   totalBdt              Decimal?      @db.Decimal(14, 2)
   /// China decides on invoicing whether to wait for payment before buying.
   paymentRequired       Boolean?
+  /// Chosen by China on the sample invoice; pre-fills the shipping step.
+  shipWay               SampleShipWay?
   invoicedById          String?
   invoicedBy            User?         @relation("SampleInvoicedBy", fields: [invoicedById], references: [id])
   invoicedAt            DateTime?
@@ -840,6 +852,12 @@ model Sample {
   purchasedById         String?
   purchasedBy           User?     @relation("SamplePurchasedBy", fields: [purchasedById], references: [id])
   purchasedAt           DateTime?
+  /// Total RMB China paid the supplier for this sample.
+  paidRmb               Decimal?  @db.Decimal(14, 2)
+  /// paidRmb × purchaseRate.
+  paidBdt               Decimal?  @db.Decimal(14, 2)
+  /// Rate used for paidBdt, locked when the purchase is saved.
+  purchaseRate          Decimal?  @db.Decimal(12, 4)
 
   // Size of the sample parcel (entered by China)
   weightKg    Decimal? @db.Decimal(10, 3)
@@ -1536,6 +1554,7 @@ model PortalAccount {
   placedOrders       Order[]             @relation("OrderPlacedBy")
   placedShipping     ShippingOrder[]     @relation("ShippingOrderPlacedBy")
   notifications      Notification[]
+  samplesRequested   Sample[]            @relation("SampleRequestedByAccount")
 
   customInvoices CustomInvoice[]
 

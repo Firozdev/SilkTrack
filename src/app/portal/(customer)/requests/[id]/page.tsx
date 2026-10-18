@@ -4,12 +4,12 @@ import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { A, Alert, Attachments, Card, Dl, Table, inputCls, tdCls } from "@/components/ui";
 import { BD_TZ, fmtDateTime, fmtDay, today } from "@/lib/dates";
-import { docNo, fmtBdt, fmtCbm, fmtKg } from "@/lib/format";
+import { docNo, fmtBdt, fmtCbm, fmtKg, fmtRate, fmtRmb } from "@/lib/format";
 import { requirePortalAccount } from "@/lib/portal-session";
 import { portalOrder, portalShipments } from "@/server/portal";
 import { ShipmentBox } from "../../shipment-box";
 import { ownerOf } from "@/server/portal-access";
-import { portalQuoteAction } from "../../../actions";
+import { portalQuoteAction, portalSampleAction } from "../../../actions";
 import { fill } from "../../../i18n";
 import { portalLabel } from "../../../labels";
 import { getDict } from "../../../lang";
@@ -36,6 +36,8 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
   const files = o.attachments.filter((f) => f.kind !== "QA_PHOTO");
   const qaPhotos = o.attachments.filter((f) => f.kind === "QA_PHOTO");
   // China's product images, per quotation line (shown once the quote is sent to the customer).
+  const rmbByLine = new Map((q?.lines ?? []).map((l) => [l.id, l]));
+  const canAskSample = !!q && ["SENT_TO_CUSTOMER", "APPROVED"].includes(q.status) && !["CANCELLED", "DELIVERED"].includes(o.status) && o.requestStatus !== "REJECTED";
   const quoteImages = new Map((q?.lines ?? []).map((l) => [l.id, (q?.attachments ?? []).filter((a) => a.estimateOrderLineId === l.orderLineId)]));
   // Payment sent / confirmed steps in the tracking timeline (one product per order, so each card shows them).
   const payments = paymentSteps(o.payments, o.paymentSubmissions).map(
@@ -77,19 +79,48 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
 
       {q && (
         <Card title={`${t.quoteTitle} ${docNo("estimate", q.number)}${q.version > 1 ? ` (v${q.version})` : ""}`} actions={<PStatus lang={lang} value={q.status} />}>
-          <Table head={[t.colProducts, t.qty.replace(" *", ""), t.unitPrice, t.amountCol]}>
-            {q.breakdown.lines.map((l) => (
-              <tr key={l.id}>
-                <td className={tdCls}>
-                  {l.productName}
-                  <Attachments items={quoteImages.get(l.id) ?? []} base="/portal/files" customerTag={null} />
-                </td>
-                <td className={tdCls}>{l.quantity}</td>
-                <td className={`${tdCls} tabular-nums`}>{fmtBdt(l.unitPrice)}</td>
-                <td className={`${tdCls} tabular-nums`}>{fmtBdt(l.amount)}</td>
-              </tr>
-            ))}
+          <Table head={q.rmb ? [t.colProducts, t.qty.replace(" *", ""), t.unitRmb, t.totalRmbCol, t.unitBdt, t.amountBdtCol] : [t.colProducts, t.qty.replace(" *", ""), t.unitPrice, t.amountCol]}>
+            {q.breakdown.lines.map((l) => {
+              const r = rmbByLine.get(l.id);
+              return (
+                <tr key={l.id}>
+                  <td className={tdCls}>
+                    {l.productName}
+                    <Attachments items={quoteImages.get(l.id) ?? []} base="/portal/files" customerTag={null} />
+                  </td>
+                  <td className={tdCls}>{l.quantity}</td>
+                  {q.rmb && (
+                    <>
+                      <td className={`${tdCls} tabular-nums`}>{r?.rmbPrice ? fmtRmb(r.rmbPrice.unit) : "—"}</td>
+                      <td className={`${tdCls} tabular-nums`}>{r?.rmbPrice ? fmtRmb(r.rmbPrice.total) : "—"}</td>
+                    </>
+                  )}
+                  <td className={`${tdCls} tabular-nums`}>{fmtBdt(l.unitPrice)}</td>
+                  <td className={`${tdCls} tabular-nums`}>{fmtBdt(l.amount)}</td>
+                </tr>
+              );
+            })}
           </Table>
+          {q.rmb && (
+            <dl className="ml-auto mt-3 max-w-md space-y-1 text-sm text-gray-600">
+              <div className="flex justify-between gap-4">
+                <dt>{t.colProducts}</dt>
+                <dd className="tabular-nums">{fmtRmb(q.rmb.products)}</dd>
+              </div>
+              {q.rmb.chinaCharges.gt(0) && (
+                <div className="flex justify-between gap-4">
+                  <dt>{t.chinaChargesRmb}</dt>
+                  <dd className="tabular-nums">{fmtRmb(q.rmb.chinaCharges)}</dd>
+                </div>
+              )}
+              <div className="flex justify-between gap-4 font-medium text-gray-800">
+                <dt>{t.productsRmb}</dt>
+                <dd className="tabular-nums">{fmtRmb(q.rmb.total)}</dd>
+              </div>
+              <p className="text-xs">{fill(t.rateLine, { rate: fmtRate(q.rmb.rate), date: fmtDay(q.rmb.rateDate) })}</p>
+              <p className="text-xs">{t.bdtInclCharges}</p>
+            </dl>
+          )}
           <dl className="ml-auto mt-3 max-w-md space-y-1 text-sm">
             <div className="flex justify-between gap-4 font-medium">
               <dt>{t.totalPurchase}</dt>
@@ -139,6 +170,30 @@ export default async function PortalRequestPage({ params }: PageProps<"/portal/r
               </ActionForm>
             </div>
           )}
+        </Card>
+      )}
+
+      {canAskSample && (
+        <Card title={t.requestSampleTitle}>
+          <p className="mb-3 text-sm text-gray-600">{t.requestSampleHelp}</p>
+          <ActionForm action={portalSampleAction} submitLabel={t.requestSampleBtn} resetOnSuccess>
+            <input type="hidden" name="orderId" value={o.id} />
+            <div className="space-y-2">
+              {o.lines
+                .filter((l) => l.status !== "CANCELLED")
+                .map((l, i) => (
+                  <div key={l.id} className="flex items-center gap-3 text-sm">
+                    <input type="hidden" name={`x.${i}.orderLineId`} value={l.id} />
+                    <span className="flex-1">{l.productName}</span>
+                    <label className="flex items-center gap-2 text-gray-600">
+                      {t.sampleQty}
+                      <input name={`x.${i}.quantity`} type="number" min={0} defaultValue={1} inputMode="numeric" className={`${inputCls} w-20`} />
+                    </label>
+                  </div>
+                ))}
+              <input name="note" maxLength={1000} placeholder={t.sampleNote} className={inputCls} />
+            </div>
+          </ActionForm>
         </Card>
       )}
 

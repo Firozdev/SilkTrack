@@ -4,13 +4,13 @@ import { ForbiddenError } from "@/lib/permissions";
 import { BD_TZ, addDays, toYmd, today } from "@/lib/dates";
 import { approveAccount, signUp } from "@/server/portal-auth";
 import { createPortalRequest } from "@/server/requests";
-import { reviseQuotation, saveQuotation, sendQuotationToCustomer, setSellingPrices, submitQuotation, type QuotationInput } from "@/server/estimates";
+import { reviseQuotation, saveQuotation, sendQuotationToCustomer, setSellingPrices, type QuotationInput } from "@/server/estimates";
 import { addQuoteImages, removeQuoteImages } from "@/server/quote-images";
 import { portalAttachment, portalOrder } from "@/server/portal";
 import { generateQuotePdf } from "@/server/documents";
 import { readAttachment } from "@/lib/uploads";
 import type { Actor } from "@/server/actor";
-import { makeRate, makeUser, resetDb } from "../helpers";
+import { makeRate, makeUser, resetDb, submitAsLegacy } from "../helpers";
 
 let admin: Actor, cs: Actor, china: Actor;
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452000000040000000208060000007fa87d630000001249444154789c63907358ff1f1933a00b00000a491061fb654d210000000049454e44ae426082", "hex");
@@ -64,7 +64,7 @@ describe("China quotation – product images per line", () => {
     expect(imgs.map((a) => a.fileName)).toEqual(["lamp-1.png"]);
 
     // Not visible to the customer while it's with China / Bangladesh
-    await submitQuotation(china, e.id);
+    await submitAsLegacy(e.id);
     await expect(addQuoteImages(china, e.id, { [lamp.id]: [png()] })).rejects.toThrow(/revise it to change images/);
     expect(await portalAttachment([cid], imgs[0].id)).toBeNull();
     expect((await portalOrder(cid, order.id))!.quote).toBeNull();

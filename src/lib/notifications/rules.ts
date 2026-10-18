@@ -29,7 +29,7 @@ export const RULES = {
 
   // ── Quotations ──
   QUOTE_SUBMITTED: R(["CS", "ADMIN"]),
-  QUOTE_SENT: R([], true),
+  QUOTE_SENT: R(["CS", "ADMIN"], true),
   QUOTE_DECIDED: R(["CS", "ADMIN"]),
   QUOTE_REVISION_REQUESTED: R(["PURCHASE"]),
   APPROVED_FOR_PURCHASE: R(["PURCHASE"]),
@@ -71,9 +71,9 @@ export const RULES = {
   ISSUE_RESOLVED: R(["CS", "ADMIN"], true),
 
   // ── Samples ──
-  SAMPLE_REQUESTED: R(["PURCHASE"]),
-  SAMPLE_INVOICED: R(["CS", "ADMIN"]),
-  SAMPLE_PAID: R(["PURCHASE"]),
+  SAMPLE_REQUESTED: R(["PURCHASE", "CS", "ADMIN"]),
+  SAMPLE_INVOICED: R(["CS", "ADMIN", "PURCHASE"], true),
+  SAMPLE_PAID: R(["PURCHASE"], true),
   SAMPLE_PURCHASED: R(["CS"]),
   SAMPLE_SHIPPED: R(["CS", "ADMIN"]),
   SAMPLE_DELIVERED: R(["PURCHASE"]),
