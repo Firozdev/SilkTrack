@@ -32,7 +32,7 @@ export default async function QuotationsPage({ searchParams }: PageProps<"/estim
 
   return (
     <>
-      <PageHeader title="China quotations" subtitle="China prices products, weight, CBM and shipping; Bangladesh adds selling prices and sends to the customer." />
+      <PageHeader title="China quotations" subtitle="China prices products, weight, CBM and shipping and sends the quotation straight to the customer (BDT = RMB × today's rate)." />
       {can(user.role, "estimate:edit") && (
         <Card title={`Requests to quote (${toQuote.length})`} className="mb-5">
           <Table head={["Request", "Customer", "Type", "Products", "Requested", ""]} empty="No requests waiting for a quotation.">

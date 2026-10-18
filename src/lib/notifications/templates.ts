@@ -32,7 +32,10 @@ export const TEMPLATES: Record<EventType, T> = {
   COMMENT_FROM_BD: (d) => ({ title: `New comment on ${s(d.ref)}`, body: s(d.text) }),
 
   QUOTE_SUBMITTED: (d) => ({ title: `Quotation ready to send: ${s(d.ref)}`, body: `${s(d.estimate)} – total ¥${s(d.totalRmb)}. Add selling prices and send to the customer, or request a sample.` }),
-  QUOTE_SENT: (d) => ({ title: `Quote ready for ${s(d.ref)}`, body: `Open the request to see the price and approve it${opt(". Valid until ", d.validUntil)}.` }),
+  QUOTE_SENT: (d, a) =>
+    a === "customer"
+      ? { title: `Quote ready for ${s(d.ref)}`, body: `Open the request to see the price, approve it or ask for a sample${opt(". Valid until ", d.validUntil)}.` }
+      : { title: `Quotation sent to customer: ${s(d.ref)}`, body: `${s(d.estimate)} – total ¥${s(d.totalRmb)}${opt(" · ", d.customer)}. Waiting for the customer's answer.` },
   QUOTE_DECIDED: (d) => ({ title: `Quote ${d.approved ? "approved" : "declined"} by customer: ${s(d.ref)}`, body: d.approved ? `${s(d.estimate)} – collect the advance payment.` : `${s(d.estimate)}${opt(" – ", d.reason)}` }),
   QUOTE_REVISION_REQUESTED: (d) => ({ title: `Quotation revision requested: ${s(d.ref)}`, body: s(d.reason) || `Update ${s(d.estimate)}.` }),
   APPROVED_FOR_PURCHASE: (d) => ({ title: `Customer approved: ${s(d.ref)}`, body: "In the purchase queue – request the upfront payment from the BD team." }),
@@ -76,9 +79,13 @@ export const TEMPLATES: Record<EventType, T> = {
     a === "customer" ? { title: `Problem found with ${s(d.ref)}`, body: `${s(d.problem)}. We are sorting it out and will update you.` } : { title: `Issue reported: ${s(d.ref)}`, body: `${s(d.problem)}${opt(" · ", d.where)}` },
   ISSUE_RESOLVED: (d, a) => (a === "customer" ? { title: `Problem with ${s(d.ref)} resolved`, body: s(d.resolution) || "The problem was resolved." } : { title: `${s(d.issue)} resolved (${s(d.ref)})`, body: s(d.resolution) }),
 
-  SAMPLE_REQUESTED: (d) => ({ title: `Sample requested: ${s(d.ref)}`, body: `${s(d.detail)} – prepare the sample invoice.` }),
-  SAMPLE_INVOICED: (d) => ({ title: `Sample invoice: ${s(d.ref)}`, body: `৳${s(d.total)}. ${d.paymentRequired ? "Collect payment from the customer and record it." : "China will buy the sample without waiting for payment."}` }),
-  SAMPLE_PAID: (d) => ({ title: `Sample paid – buy now: ${s(d.ref)}`, body: s(d.detail) }),
+  SAMPLE_REQUESTED: (d) => ({ title: `Sample requested: ${s(d.ref)}`, body: `${s(d.detail)}${opt(" · by ", d.by)} – CS / Admin: prepare the sample invoice.` }),
+  SAMPLE_INVOICED: (d, a) =>
+    a === "customer"
+      ? { title: `Sample invoice: ${s(d.ref)}`, body: `৳${s(d.total)}. ${d.paymentRequired ? "Please pay and tell us in the portal – we buy the sample once it is paid." : "We are buying your sample now."}` }
+      : { title: `Sample invoice: ${s(d.ref)}`, body: `৳${s(d.total)}. ${d.paymentRequired ? "Waiting for the customer's payment." : "No payment needed first – China can buy the sample."}` },
+  SAMPLE_PAID: (d, a) =>
+    a === "customer" ? { title: `Sample payment received: ${s(d.ref)}`, body: "Thank you – we are buying your sample now." } : { title: `Sample paid – buy now: ${s(d.ref)}`, body: s(d.detail) },
   SAMPLE_PURCHASED: (d) => ({ title: `Sample purchased: ${s(d.ref)}`, body: s(d.detail) }),
   SAMPLE_SHIPPED: (d) => ({ title: `Sample on the way: ${s(d.ref)}`, body: s(d.how) }),
   SAMPLE_DELIVERED: (d) => ({ title: `Sample delivered: ${s(d.ref)}`, body: d.feedback ? `Customer feedback: ${s(d.feedback)}` : "Delivered to the customer." }),

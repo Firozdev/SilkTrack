@@ -15,6 +15,7 @@ import { saveAttachments } from "@/lib/uploads";
 import { endPortalSession, getPortalAccount, requirePortalAccount, startPortalSession } from "@/lib/portal-session";
 import { acceptInvite, authenticate, resetPassword, signUp } from "@/server/portal-auth";
 import { decidePortalQuotation } from "@/server/estimates";
+import { requestSampleFromPortal } from "@/server/samples";
 import { cancelPortalRequest, createPortalRequest, updatePortalRequest } from "@/server/requests";
 import { cancelPortalShippingOrder, createPortalShippingOrder, updatePortalShippingOrder, updatePortalShippingTracking } from "@/server/shipping-orders";
 import { UserError } from "@/lib/action";
@@ -170,6 +171,17 @@ export const portalQuoteAction = portalAction(async (fd, t) => {
   await decidePortalQuotation(await requireOwner(acc, "estimate", f.estimateId), f.estimateId, f.decision, f.reason);
   revalidatePath(`/portal/requests/${f.orderId}`);
   return { ok: true, message: f.decision === "APPROVE" ? t.quoteApproved : t.quoteDeclined };
+});
+
+/** The customer / agent asks for a sample from the quotation they received. */
+export const portalSampleAction = portalAction(async (fd, t) => {
+  const acc = await requirePortalAccount();
+  const f = z.object({ orderId: z.string().min(1), note: zStrOpt }).parse(fields(fd));
+  const lines = rows(fd, "x").map((r) => z.object({ orderLineId: z.string().min(1), quantity: zIntMin0 }).parse(r));
+  const customerId = await requireOwner(acc, "order", f.orderId);
+  await requestSampleFromPortal(acc, customerId, f.orderId, { lines, note: f.note });
+  revalidatePath(`/portal/requests/${f.orderId}`);
+  return { ok: true, message: t.sampleRequested };
 });
 
 const TARGET = z.object({ kind: z.enum(["order", "shipping", "sample"]), id: z.string().min(1) });

@@ -107,14 +107,14 @@ export function SampleInvoiceForm({
   );
 }
 
-const MODES = [
-  ["WEEKLY_SHIPMENT", "Planned shipment"],
-  ["EXPRESS_COURIER", "Express courier (DHL, FedEx, SF…)"],
+const WAYS = [
   ["HAND_CARRY", "Hand carry"],
-  ["POST", "Post / EMS"],
-  ["OTHER", "Other"],
+  ["AIR", "Air shipment"],
+  ["SEA", "Sea shipment"],
 ] as const;
+type Way = (typeof WAYS)[number][0];
 
+/** China sends the sample by hand carry, or in an open / upcoming air or sea weekly shipment. */
 export function SampleShipForm({
   id,
   init,
@@ -122,20 +122,21 @@ export function SampleShipForm({
   shipments,
 }: {
   id: string;
-  init: { shippingMode: string | null; shipmentId: string | null; carrierName: string; trackingNo: string; trackingUrl: string; etaBd: string };
+  init: { way: Way | null; shipmentId: string | null; carrierName: string; trackingNo: string; trackingUrl: string; etaBd: string };
   size: SizeInit;
-  shipments: { id: string; label: string }[];
+  shipments: { id: string; label: string; method: "AIR" | "SEA" }[];
 }) {
-  const [mode, setMode] = useState(init.shippingMode ?? "EXPRESS_COURIER");
+  const [way, setWay] = useState<Way>(init.way ?? "HAND_CARRY");
   const [size, setSize] = useState(sizeInit);
-  const planned = mode === "WEEKLY_SHIPMENT";
+  const planned = way !== "HAND_CARRY";
+  const options = shipments.filter((s) => s.method === way);
   return (
     <ActionForm action={shipAction} submitLabel="Save shipping">
       <input type="hidden" name="id" value={id} />
       <div className="grid gap-2 sm:grid-cols-2">
-        <Field label="Shipping option">
-          <select name="shippingMode" value={mode} onChange={(e) => setMode(e.target.value)} className={inputCls}>
-            {MODES.map(([v, t]) => (
+        <Field label="Ship by">
+          <select name="way" value={way} onChange={(e) => setWay(e.target.value as Way)} className={inputCls}>
+            {WAYS.map(([v, t]) => (
               <option key={v} value={v}>
                 {t}
               </option>
@@ -143,10 +144,10 @@ export function SampleShipForm({
           </select>
         </Field>
         {planned ? (
-          <Field label="Planned shipment *" hint={shipments.length ? undefined : "No planned shipment is open – plan one on the Shipments page."}>
-            <select name="shipmentId" defaultValue={init.shipmentId ?? ""} required className={inputCls}>
+          <Field label={`${way === "AIR" ? "Air" : "Sea"} shipment *`} hint={options.length ? "Only open / upcoming shipments" : `No ${way.toLowerCase()} shipment is open – plan one on the Shipments page.`}>
+            <select key={way} name="shipmentId" defaultValue={options.some((o) => o.id === init.shipmentId) ? (init.shipmentId ?? "") : ""} required className={inputCls}>
               <option value="">Choose…</option>
-              {shipments.map((s) => (
+              {options.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
                 </option>
@@ -155,11 +156,11 @@ export function SampleShipForm({
           </Field>
         ) : (
           <>
-            <Field label="Carrier / person">
-              <input name="carrierName" defaultValue={init.carrierName} placeholder="DHL / Mr. Li (flight)…" className={inputCls} />
+            <Field label="Carried by">
+              <input name="carrierName" defaultValue={init.carrierName} placeholder="Mr. Li (flight CZ392)…" className={inputCls} />
             </Field>
-            <Field label={mode === "EXPRESS_COURIER" ? "Tracking no. *" : "Tracking no."}>
-              <input name="trackingNo" defaultValue={init.trackingNo} required={mode === "EXPRESS_COURIER"} className={inputCls} />
+            <Field label="Tracking / flight no.">
+              <input name="trackingNo" defaultValue={init.trackingNo} className={inputCls} />
             </Field>
             <Field label="Tracking URL">
               <input name="trackingUrl" type="url" defaultValue={init.trackingUrl} className={inputCls} />

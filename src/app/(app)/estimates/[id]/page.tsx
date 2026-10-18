@@ -153,7 +153,7 @@ export default async function QuotationPage({ params }: PageProps<"/estimates/[i
                   <Link href={`/estimates/new?order=${e.order.id}`} className={btnCls}>
                     Edit
                   </Link>
-                  <ActionForm action={submitAction} submitLabel="Submit to Bangladesh">
+                  <ActionForm action={submitAction} submitLabel="Send to customer">
                     {hid}
                   </ActionForm>
                 </>

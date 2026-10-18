@@ -28,9 +28,10 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
       order: { select: { id: true, number: true } },
       customer: { select: { id: true, name: true, code: true, phone: true, email: true } },
       requestedBy: { select: { name: true } },
+      requestedByAccount: { select: { name: true, kind: true } },
       invoicedBy: { select: { name: true } },
       purchasedBy: { select: { name: true } },
-      shipment: { select: { id: true, code: true } },
+      shipment: { select: { id: true, code: true, method: true } },
       lines: { include: { attachments: { select: { id: true, fileName: true, mimeType: true, uploadedByAccountId: true } } } },
       events: { orderBy: { occurredAt: "asc" }, include: { createdBy: { select: { name: true } } } },
       payments: { orderBy: { paidAt: "asc" } },
@@ -41,6 +42,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
   const history = await recordHistory({ sampleId: s.id }, "staff");
   const china = can(user.role, "purchase:edit");
   const bd = can(user.role, "request:edit");
+  const invoicer = can(user.role, "quote:edit");
   const hid = <input type="hidden" name="id" value={s.id} />;
   const open = !["DELIVERED", "CANCELLED"].includes(s.status);
   const shipments = china && ["PURCHASED", "SHIPPED"].includes(s.status) ? await acceptingShipments() : [];
@@ -57,7 +59,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
         title={`${sampleNo(s)} · ${s.order ? docNo("order", s.order.number) : "No request"}`}
         subtitle={
           <span className="flex flex-wrap items-center gap-2">
-            <Badge value={s.status} /> <A href={`/customers/${s.customer.id}`}>{s.customer.name} ({s.customer.code})</A> · requested by {s.requestedBy.name}, {fmtDateTime(s.requestedAt, user.timezone)}
+            <Badge value={s.status} /> <A href={`/customers/${s.customer.id}`}>{s.customer.name} ({s.customer.code})</A> · requested by {s.requestedBy?.name ?? (s.requestedByAccount ? `${s.requestedByAccount.name} (${s.requestedByAccount.kind === "AGENT" ? "agent" : "customer"}, portal)` : "—")}, {fmtDateTime(s.requestedAt, user.timezone)}
           </span>
         }
         actions={s.order && <A href={`/requests/${s.order.id}`}>Open request →</A>}
@@ -85,7 +87,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
           </Card>
 
           <div className="space-y-2">
-            {/* 1. Invoice (China) */}
+            {/* 1. Invoice (CS / Admin) */}
             <Step
               n={1}
               title="Sample invoice"
@@ -93,10 +95,10 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
               summary={
                 s.totalRmb
                   ? `${fmtRmb(s.totalRmb)} · ${fmtBdt(s.totalBdt)} · ${s.paymentRequired ? "payment first" : "no payment needed"}`
-                  : "China prepares the invoice"
+                  : "CS / Admin prepare the invoice"
               }
             >
-              {china && open && ["REQUESTED", "INVOICED", "AWAITING_PAYMENT"].includes(s.status) ? (
+              {invoicer && open && ["REQUESTED", "INVOICED", "AWAITING_PAYMENT"].includes(s.status) ? (
                 <SampleInvoiceForm
                   id={s.id}
                   init={{
@@ -111,9 +113,9 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                   size={sizeInit}
                 />
               ) : s.totalRmb ? (
-                <p className="text-sm text-gray-600">See the invoice details on the right. {china && "The invoice can no longer be changed."}</p>
+                <p className="text-sm text-gray-600">See the invoice details on the right. {invoicer && "The invoice can no longer be changed."}</p>
               ) : (
-                <Waiting who="China" what="prepare the sample invoice" />
+                <Waiting who="CS / Admin" what="prepare the sample invoice" />
               )}
             </Step>
 
@@ -209,7 +211,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
               state={s.shippedAt ? "done" : open && s.status === "PURCHASED" ? "current" : "todo"}
               summary={
                 s.shippedAt
-                  ? `${s.shipment ? `Planned shipment ${s.shipment.code}` : s.shippingMode ? humanize(s.shippingMode) : ""}${s.trackingNo ? ` · ${s.trackingNo}` : ""} · ETA ${fmtDay(s.etaBd)}`
+                  ? `${s.shipment ? `${s.shipment.method === "AIR" ? "Air" : "Sea"} shipment ${s.shipment.code}` : s.shippingMode ? humanize(s.shippingMode) : ""}${s.trackingNo ? ` · ${s.trackingNo}` : ""} · ETA ${fmtDay(s.etaBd)}`
                   : undefined
               }
             >
@@ -217,7 +219,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                 <SampleShipForm
                   id={s.id}
                   init={{
-                    shippingMode: s.shippingMode,
+                    way: s.shippingMode === "HAND_CARRY" ? "HAND_CARRY" : s.shipment ? s.shipment.method : null,
                     shipmentId: s.shipmentId,
                     carrierName: s.carrierName ?? "",
                     trackingNo: s.trackingNo ?? "",
@@ -226,8 +228,8 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                   }}
                   size={sizeInit}
                   shipments={[
-                    ...(s.shipment && !shipments.some((x) => x.id === s.shipment!.id) ? [{ id: s.shipment.id, label: s.shipment.code }] : []),
-                    ...shipments.map((x) => ({ id: x.id, label: `${x.code} · cut-off ${fmtDay(x.cutoffDate)} · ETA ${fmtDay(x.etaBd)}` })),
+                    ...(s.shipment && !shipments.some((x) => x.id === s.shipment!.id) ? [{ id: s.shipment.id, label: s.shipment.code, method: s.shipment.method }] : []),
+                    ...shipments.map((x) => ({ id: x.id, label: `${x.code} · cut-off ${fmtDay(x.cutoffDate)} · ETA ${fmtDay(x.etaBd)}`, method: x.method })),
                   ]}
                 />
               ) : s.shippedAt ? (
@@ -374,7 +376,7 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
                 ["Est. receive (China)", fmtDay(s.expectedAtWarehouseAt)],
                 ["Purchased", s.purchasedAt ? `${fmtDateTime(s.purchasedAt, user.timezone)} · ${s.purchasedBy?.name ?? ""}` : "—"],
                 ["Size", s.weightKg || s.cbm ? `${fmtKg(s.weightKg)} · ${s.cartonCount ?? 1} ctn${s.lengthCm ? ` · ${fmtNum(s.lengthCm, 1)}×${fmtNum(s.widthCm, 1)}×${fmtNum(s.heightCm, 1)} cm` : ""} · ${fmtCbm(s.cbm)}` : "—"],
-                ["Sent by", s.shippingMode ? (s.shippingMode === "WEEKLY_SHIPMENT" ? "Planned shipment" : humanize(s.shippingMode)) : "—"],
+                ["Sent by", s.shippingMode ? (s.shippingMode === "WEEKLY_SHIPMENT" ? `${s.shipment?.method === "SEA" ? "Sea" : "Air"} shipment` : humanize(s.shippingMode)) : "—"],
                 ["Shipment", s.shipment ? <A key="s" href={`/shipments/${s.shipment.id}`}>{s.shipment.code}</A> : "—"],
                 ["Carrier", s.carrierName],
                 ["Tracking", s.trackingUrl ? <a key="t" href={s.trackingUrl} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">{s.trackingNo ?? "Open ↗"}</a> : s.trackingNo],

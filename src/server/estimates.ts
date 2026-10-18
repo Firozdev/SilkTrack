@@ -3,7 +3,7 @@ import type { EstimateStatus, Prisma, ShippingMethod } from "@/generated/prisma/
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError, assertCan, canSeeSelling } from "@/lib/permissions";
 import { UserError } from "@/lib/action";
-import { D, money, sum } from "@/lib/money";
+import { D, allocate, money, rmbToBdt, sum } from "@/lib/money";
 import { calcQuotation } from "@/lib/quotation";
 import { BD_TZ, today } from "@/lib/dates";
 import { docNo } from "@/lib/format";
@@ -161,13 +161,73 @@ async function setStatus(tx: Tx, id: string, from: EstimateStatus, to: EstimateS
   await logChanges(tx, { entityType: "Estimate", entityId: id, userId: actorId, action: "UPDATE", changes: [{ field: "status", oldValue: from, newValue: to }] });
 }
 
-/** China hands the quotation to the BD team. */
+/**
+ * China submits the quotation and it goes straight to the customer (and their
+ * agent) – no BD step. The rate in force today is locked now, and the BDT
+ * price is exactly RMB × rate (no markup): the China costs are spread over the
+ * lines in proportion to their RMB value, so Σ selling = (products + China
+ * costs) × rate. Shipping is shown separately, as before.
+ */
 export async function submitQuotation(actor: Actor, id: string) {
   assertCan(actor.role, "estimate:edit");
   const e = await loadEstimate(id);
   if (e.status !== "DRAFT") throw new UserError("Only drafts can be submitted");
-  await prisma.$transaction((tx) => setStatus(tx, id, e.status, "SUBMITTED_BY_CHINA", actor.id, { submittedAt: new Date() }));
-  await notify("QUOTE_SUBMITTED", { order: e.order }, { estimate: `${docNo("estimate", e.number)} v${e.version}`, totalRmb: e.totalRmb.toFixed(2) }, { userId: actor.id });
+  if (e.validUntil < today(BD_TZ)) throw new UserError("The valid-until date has passed – change it before submitting");
+  if (!e.lines.length) throw new UserError("The quotation has no products");
+  const { exchangeRateId, rateUsed } = await rateForConversion();
+  const productRmb = e.totalRmb.sub(e.shippingRmb);
+  const productCostBdt = rmbToBdt(productRmb, rateUsed);
+  const shippingBdt = rmbToBdt(e.shippingRmb, rateUsed);
+  const selling = allocate(productCostBdt, e.lines.map((l) => l.lineTotalRmb));
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    for (const [i, l] of e.lines.entries()) {
+      await tx.estimateLine.update({ where: { id: l.id }, data: { sellingPriceBdt: selling[i] } });
+      if (l.orderLineId) await tx.orderLine.update({ where: { id: l.orderLineId }, data: { quotedUnitPriceRmb: l.unitPriceRmb, sellingPriceBdt: selling[i] } });
+    }
+    await tx.estimate.update({
+      where: { id },
+      data: { exchangeRateId, rateUsed, productCostBdt, shippingBdt, totalBdt: productCostBdt.add(shippingBdt), grandTotalBdt: productCostBdt, marginBdt: D(0) },
+    });
+    await logChanges(tx, { entityType: "Estimate", entityId: id, userId: actor.id, action: "UPDATE", changes: diffFields(e, { rateUsed, grandTotalBdt: productCostBdt }) });
+    await setStatus(tx, id, e.status, "SENT_TO_CUSTOMER", actor.id, { submittedAt: now, sentAt: now });
+    await markQuoted(tx, e, actor.id);
+  });
+  await afterSent(actor, id, e, true);
+}
+
+/** Request becomes Quoted, its lines too. */
+async function markQuoted(tx: Tx, e: Awaited<ReturnType<typeof loadEstimate>>, actorId: string) {
+  if (e.order.requestStatus !== "QUOTED") {
+    await tx.order.update({ where: { id: e.orderId }, data: { requestStatus: "QUOTED" } });
+    await logChanges(tx, { entityType: "Order", entityId: e.orderId, userId: actorId, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: e.order.requestStatus, newValue: "QUOTED" }] });
+  }
+  await setLineStatus(tx, e.lines.map((l) => l.orderLineId).filter((x): x is string => !!x), "QUOTED", { actorId, message: `Quotation ${docNo("estimate", e.number)} v${e.version} sent to customer`, onlyForward: true });
+}
+
+/**
+ * Customer message, PDF and notifications (customer, their agent, CS and
+ * Admin) once a quotation is sent. RMB is mentioned only for direct quotes
+ * (no markup) – a BD-priced quote never reveals the cost.
+ */
+async function afterSent(actor: Actor, id: string, e: Awaited<ReturnType<typeof loadEstimate>>, direct = false) {
+  const fresh = await prisma.estimate.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+  const b = await quoteBreakdown(fresh);
+  await queueCustomerMessage(e.order.customerId, "WHATSAPP", {
+    type: "QUOTE_READY",
+    title: "Quotation ready",
+    body: `Your quotation for ${docNo("order", e.order.number)} is ready. Products: ${direct ? `¥${fresh.totalRmb.sub(fresh.shippingRmb).toFixed(2)} = ` : ""}৳${b.products.toFixed(2)}${
+      b.shipping ? `; estimated shipping ৳${b.shipping.amount.add(b.delivery).toFixed(2)} (can change with your lot's actual weight/CBM); estimated total ৳${b.estimatedTotal.toFixed(2)}` : "; shipping is charged on your lot's actual weight/CBM"
+    }. Valid until ${e.validUntil.toISOString().slice(0, 10)}.`,
+    orderId: e.orderId,
+  });
+  await safely("quotation", () => generateQuotePdf(id, actor.id));
+  await notify(
+    "QUOTE_SENT",
+    { order: e.order, customerId: e.order.customerId },
+    { validUntil: e.validUntil.toISOString().slice(0, 10), estimate: `${docNo("estimate", e.number)} v${e.version}`, totalRmb: fresh.totalRmb.toFixed(2) },
+    { userId: actor.id },
+  );
 }
 
 /** Selling price per line (BDT). BD always; China users only with canSetSellingPrice. */
@@ -207,7 +267,10 @@ export async function setUnitSellingPrices(actor: Actor, id: string, lines: { li
   );
 }
 
-/** BD sends the quotation to the customer: prices copied to the order, request becomes Quoted. */
+/**
+ * Older quotations still waiting at "Submitted by China" (from before China
+ * sent quotes directly): BD sends them with their own selling prices.
+ */
 export async function sendQuotationToCustomer(actor: Actor, id: string) {
   assertCan(actor.role, "quote:edit");
   const e = await loadEstimate(id);
@@ -220,23 +283,9 @@ export async function sendQuotationToCustomer(actor: Actor, id: string) {
       await tx.orderLine.update({ where: { id: l.orderLineId }, data: { quotedUnitPriceRmb: l.unitPriceRmb, sellingPriceBdt: l.sellingPriceBdt } });
     }
     await setStatus(tx, id, e.status, "SENT_TO_CUSTOMER", actor.id, { sentAt: new Date() });
-    if (e.order.requestStatus !== "QUOTED") {
-      await tx.order.update({ where: { id: e.orderId }, data: { requestStatus: "QUOTED" } });
-      await logChanges(tx, { entityType: "Order", entityId: e.orderId, userId: actor.id, action: "UPDATE", changes: [{ field: "requestStatus", oldValue: e.order.requestStatus, newValue: "QUOTED" }] });
-    }
-    await setLineStatus(tx, e.lines.map((l) => l.orderLineId).filter((x): x is string => !!x), "QUOTED", { actorId: actor.id, message: `Quotation ${docNo("estimate", e.number)} v${e.version} sent to customer`, onlyForward: true });
+    await markQuoted(tx, e, actor.id);
   });
-  const b = await quoteBreakdown({ ...e, sentAt: new Date() });
-  await queueCustomerMessage(e.order.customerId, "WHATSAPP", {
-    type: "QUOTE_READY",
-    title: "Quotation ready",
-    body: `Your quotation for ${docNo("order", e.order.number)} is ready. Products: ৳${b.products.toFixed(2)}${
-      b.shipping ? `; estimated shipping ৳${b.shipping.amount.add(b.delivery).toFixed(2)} (can change with your lot's actual weight/CBM); estimated total ৳${b.estimatedTotal.toFixed(2)}` : "; shipping is charged on your lot's actual weight/CBM"
-    }. Valid until ${e.validUntil.toISOString().slice(0, 10)}.`,
-    orderId: e.orderId,
-  });
-  await safely("quotation", () => generateQuotePdf(id, actor.id));
-  await notify("QUOTE_SENT", { order: e.order, customerId: e.order.customerId }, { validUntil: e.validUntil.toISOString().slice(0, 10) }, { userId: actor.id });
+  await afterSent(actor, id, e);
 }
 
 /** Customer accepted: order goes to the China purchase queue. Expired quotations must be re-priced first. */

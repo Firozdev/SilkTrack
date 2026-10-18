@@ -26,7 +26,7 @@ export default async function NewQuotationPage({ searchParams }: PageProps<"/est
         title={`${d.draft ? `Edit quotation v${d.draft.version}` : "New quotation"} · ${docNo("order", d.order.number)}`}
         subtitle={`${d.order.customer.code} · ${d.order.type === "BULK" ? "Bulk" : "Single"} · customer prefers ${d.order.shippingMethod.toLowerCase()}`}
       />
-      <QuotationForm orderId={d.order.id} lines={d.lines} initial={d.initial} canSetSelling={d.canSetSelling} rate={d.rate} />
+      <QuotationForm orderId={d.order.id} lines={d.lines} initial={d.initial} canSetSelling={false} rate={d.rate} />
     </>
   );
 }

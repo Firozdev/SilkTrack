@@ -808,8 +808,11 @@ model Sample {
   customerId    String
   customer      Customer     @relation(fields: [customerId], references: [id])
   status        SampleStatus @default(REQUESTED)
-  requestedById String
-  requestedBy   User         @relation("SampleRequestedBy", fields: [requestedById], references: [id])
+  /// Staff user who asked for it, or the portal login (customer / agent) – one of the two.
+  requestedById        String?
+  requestedBy          User?          @relation("SampleRequestedBy", fields: [requestedById], references: [id])
+  requestedByAccountId String?
+  requestedByAccount   PortalAccount? @relation("SampleRequestedByAccount", fields: [requestedByAccountId], references: [id])
   requestNote   String?
   requestedAt   DateTime     @default(now())
 
@@ -1536,6 +1539,7 @@ model PortalAccount {
   placedOrders       Order[]             @relation("OrderPlacedBy")
   placedShipping     ShippingOrder[]     @relation("ShippingOrderPlacedBy")
   notifications      Notification[]
+  samplesRequested   Sample[]            @relation("SampleRequestedByAccount")
 
   customInvoices CustomInvoice[]
 

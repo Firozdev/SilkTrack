@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { BD_TZ, toYmd, today } from "@/lib/dates";
 import { createRequest } from "@/server/requests";
-import { saveQuotation, sendQuotationToCustomer, setSellingPrices, setUnitSellingPrices, submitQuotation } from "@/server/estimates";
+import { saveQuotation, sendQuotationToCustomer, setSellingPrices, setUnitSellingPrices } from "@/server/estimates";
 import { addShippingRate } from "@/server/shipping-rates";
 import { portalOrder } from "@/server/portal";
 import type { Actor } from "@/server/actor";
-import { makeRate, makeUser, resetDb } from "../helpers";
+import { makeRate, makeUser, resetDb, submitAsLegacy } from "../helpers";
 
 let admin: Actor, cs: Actor, china: Actor;
 
@@ -30,7 +30,7 @@ async function sentQuote(shippingMethod: "AIR" | "SEA" = "AIR") {
       { orderLineId: order.lines[1].id, unitPriceRmb: "30", unitWeightKg: "1.2", cartonCount: 2, lengthCm: "20", widthCm: "20", heightCm: "20" },
     ],
   });
-  await submitQuotation(china, e.id);
+  await submitAsLegacy(e.id);
   const el = await prisma.estimateLine.findMany({ where: { estimateId: e.id }, orderBy: { productName: "asc" } });
   await setSellingPrices(cs, e.id, [
     { lineId: el[0].id, sellingPriceBdt: "4500" }, // Lamp: 450 each
@@ -85,7 +85,7 @@ describe("Customer quotation breakdown", () => {
   it("CS enters the price per unit: 1500 × 3 pieces shows unit 1500 and amount 4500", async () => {
     const { order } = await createRequest(cs, { customer: { name: "U", phone: "01600000000", address: "x" }, shippingMethod: "AIR", lines: [{ productName: "Bag", quantity: 3, links: [] }] });
     const e = await saveQuotation(china, order.id, { shippingMethod: "AIR", shippingRatePerKgRmb: "40", validUntil: new Date("2099-01-01T00:00:00Z"), lines: [{ orderLineId: order.lines[0].id, unitPriceRmb: "50" }] });
-    await submitQuotation(china, e.id);
+    await submitAsLegacy(e.id);
     const [line] = await prisma.estimateLine.findMany({ where: { estimateId: e.id } });
     await expect(setUnitSellingPrices(cs, e.id, [{ lineId: "nope", unitPriceBdt: "1" }])).rejects.toThrow(/Unknown product line/);
     await setUnitSellingPrices(cs, e.id, [{ lineId: line.id, unitPriceBdt: "1500" }]);

@@ -91,6 +91,23 @@ async function main() {
     await prisma.customer.update({ where: { id: c.id }, data: { agentAccountId: agent.id } });
     await prisma.order.create({ data: { customerId: c.id, source: "PORTAL", placedByAccountId: agent.id, requestStatus: "NEW", shippingMethod: "AIR", lines: { create: [line(`Phone case for ${name} (demo)`, 5)] } } });
   }
+  // China quotes this two-product agent request → it goes straight to the agent (RMB + BDT), who can ask for a sample.
+  const agentCustomerA = await customer("C-DEMO3", "Demo Agent Customer A", "01700000097");
+  await prisma.order.create({
+    data: {
+      customerId: agentCustomerA.id,
+      source: "PORTAL",
+      placedByAccountId: agent.id,
+      requestStatus: "NEW",
+      shippingMethod: "AIR",
+      lines: { create: [line("LED desk lamp – quote to agent (demo)", 20), { ...line("Lamp shade – quote to agent (demo)", 20), lineNo: 2 }] },
+    },
+  });
+  // Today's RMB → BDT rate, so quotes convert at today's rate (test databases only).
+  const todayUtc = today("Asia/Dhaka");
+  if (!(await prisma.exchangeRate.findFirst({ where: { effectiveDate: todayUtc } }))) {
+    await prisma.exchangeRate.create({ data: { effectiveDate: todayUtc, rate: "17.2500", updatedById: admin.id, note: "Demo rate" } });
+  }
 
   const issue = await prisma.issue.create({ data: { type: "DAMAGED", source: "CHINA_RECEIVING", orderId: buyStaff.id, description: "Demo: carton arrived crushed, one chair leg broken", reportedById: admin.id } });
 

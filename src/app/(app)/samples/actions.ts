@@ -67,7 +67,8 @@ export const shipAction = step(async (u, id, fd) => {
   const size = sizeSchema.parse(fields(fd));
   const p = z
     .object({
-      shippingMode: z.enum(["WEEKLY_SHIPMENT", "EXPRESS_COURIER", "HAND_CARRY", "POST", "OTHER"]),
+      // Hand carry, or an air / sea weekly shipment.
+      way: z.enum(["HAND_CARRY", "AIR", "SEA"]),
       carrierName: zStrOpt,
       trackingNo: zStrOpt,
       trackingUrl: zStrOpt,
@@ -75,7 +76,9 @@ export const shipAction = step(async (u, id, fd) => {
       etaBd: zYmdOpt,
     })
     .parse(fields(fd));
-  await shipSample(u, id, { ...p, etaBd: p.etaBd ? dayFromYmd(p.etaBd) : undefined, size });
+  const { way, ...rest } = p;
+  const mode = way === "HAND_CARRY" ? { shippingMode: "HAND_CARRY" as const } : { shippingMode: "WEEKLY_SHIPMENT" as const, method: way };
+  await shipSample(u, id, { ...rest, ...mode, etaBd: p.etaBd ? dayFromYmd(p.etaBd) : undefined, size });
 }, "Shipping saved.");
 
 export const receiveAction = step((u, id) => receiveSampleBd(u, id), "Marked as received in Bangladesh.");

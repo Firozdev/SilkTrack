@@ -135,7 +135,13 @@ export async function portalOrder(customerId: string, orderId: string) {
           shippingMethod: true,
           grossWeightKg: true,
           cbm: true,
-          lines: { select: { id: true, productName: true, quantity: true, sellingPriceBdt: true, orderLineId: true } },
+          totalRmb: true,
+          shippingRmb: true,
+          rmbSubtotal: true,
+          rateUsed: true,
+          productCostBdt: true,
+          exchangeRate: { select: { effectiveDate: true } },
+          lines: { select: { id: true, productName: true, quantity: true, sellingPriceBdt: true, orderLineId: true, unitPriceRmb: true, lineTotalRmb: true } },
           attachments: quoteImageSelect,
         },
       },
@@ -152,7 +158,24 @@ export async function portalOrder(customerId: string, orderId: string) {
   });
   if (!o) return null;
   const e = o.estimates[0];
-  return { ...o, paid: paidOf(o.payments), quote: e ? { ...e, estimateId: e.id, breakdown: await quoteBreakdown(e) } : null };
+  // The raw estimate (with RMB) is replaced by `quote` below.
+  const { estimates: _estimates, ...order } = o;
+  void _estimates;
+  if (!e) return { ...order, paid: paidOf(o.payments), quote: null };
+  // RMB prices are shown only for quotations China sent directly (selling =
+  // RMB × rate, no markup). Older quotations priced by BD keep showing BDT
+  // only, so their cost is never revealed.
+  const { productCostBdt, totalRmb, shippingRmb, rmbSubtotal, rateUsed, exchangeRate, lines, ...rest } = e;
+  const direct = !!e.grandTotalBdt && e.grandTotalBdt.equals(productCostBdt);
+  const productsRmb = totalRmb.sub(shippingRmb);
+  const quote = {
+    ...rest,
+    lines: lines.map(({ unitPriceRmb, lineTotalRmb, ...l }) => ({ ...l, ...(direct ? { rmbPrice: { unit: unitPriceRmb, total: lineTotalRmb } } : {}) })),
+    rmb: direct ? { products: rmbSubtotal, chinaCharges: productsRmb.sub(rmbSubtotal), total: productsRmb, rate: rateUsed, rateDate: exchangeRate.effectiveDate } : null,
+    estimateId: e.id,
+    breakdown: await quoteBreakdown(e),
+  };
+  return { ...order, paid: paidOf(o.payments), quote };
 }
 
 export async function portalShippingOrder(customerId: string, id: string) {
