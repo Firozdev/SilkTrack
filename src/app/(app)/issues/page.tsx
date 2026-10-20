@@ -1,3 +1,5 @@
+import { can } from "@/lib/permissions";
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
 import type { Prisma } from "@/generated/prisma/client";
 import { ActionForm } from "@/components/action-form";
 import { A, Badge, Card, PageHeader, btnCls, inputCls } from "@/components/ui";
@@ -10,6 +12,7 @@ import { issueAction } from "./actions";
 
 export default async function IssuesPage({ searchParams }: PageProps<"/issues">) {
   const user = await requireUser();
+  const bulk = can(user.role, "record:delete");
   const sp = await searchParams;
   const where: Prisma.IssueWhereInput = {};
   if (typeof sp.id === "string") where.id = sp.id;
@@ -47,6 +50,12 @@ export default async function IssuesPage({ searchParams }: PageProps<"/issues">)
         </select>
         <button className={btnCls}>Filter</button>
       </form>
+      {bulk && <BulkDeleteBar formId="bulk-issues" type="Issue" back="/issues" />}
+      {bulk && issues.length > 0 && (
+        <label className="mb-2 flex items-center gap-2 text-sm text-gray-600">
+          <SelectAll formId="bulk-issues" /> Select all
+        </label>
+      )}
       <div className="space-y-3">
         {issues.length === 0 && <p className="text-sm text-gray-400">No issues 🎉</p>}
         {issues.map((i) => (
@@ -54,6 +63,7 @@ export default async function IssuesPage({ searchParams }: PageProps<"/issues">)
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="text-sm">
                 <div className="flex flex-wrap items-center gap-2">
+                  {bulk && <SelectRow formId="bulk-issues" id={i.id} />}
                   <b>{docNo("issue", i.number)}</b> <Badge value={i.type} /> <Badge value={i.status} /> <span className="text-gray-500">{humanize(i.source)}</span>
                   <DeleteRecordLink role={user.role} type="Issue" id={i.id} back="/issues" small />
                 </div>

@@ -1,3 +1,4 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
 import type { PurchaseStatus } from "@/generated/prisma/client";
 import { A, Badge, Card, PageHeader, Table, btnCls, btnPrimaryCls, inputCls, tdCls } from "@/components/ui";
 import { fmtDateTime, fmtDay } from "@/lib/dates";
@@ -13,6 +14,7 @@ const STATUSES: PurchaseStatus[] = ["PENDING", "PURCHASED", "SHIPPED_BY_SUPPLIER
 
 export default async function PurchasingPage({ searchParams }: PageProps<"/purchasing">) {
   const user = await requireUser();
+  const bulk = can(user.role, "record:delete");
   const sp = await searchParams;
   const status = STATUSES.find((s) => s === sp.status);
   const [queue, purchases, inbox] = await Promise.all([purchaseQueue(), listPurchases(status ? { status } : {}), chinaInbox()]);
@@ -129,6 +131,7 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/purch
       )}
 
       <Card title="Supplier orders">
+        {bulk && <BulkDeleteBar formId="bulk-purchasing" type="SupplierOrder" back="/purchasing" />}
         <form className="mb-3 flex gap-2">
           <select name="status" defaultValue={status ?? ""} className={`${inputCls} max-w-xs`}>
             <option value="">All statuses</option>
@@ -140,9 +143,14 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/purch
           </select>
           <button className={btnCls}>Filter</button>
         </form>
-        <Table head={["Purchase", "Date", "Supplier", "Orders", "Total RMB", "Tracking", "Expected", "Status"]} empty="No purchases yet.">
+        <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-purchasing" />] : []), "Purchase", "Date", "Supplier", "Orders", "Total RMB", "Tracking", "Expected", "Status"]} empty="No purchases yet.">
           {purchases.map((p) => (
             <tr key={p.id}>
+              {bulk && (
+                <td className={tdCls}>
+                  <SelectRow formId="bulk-purchasing" id={p.id} />
+                </td>
+              )}
               <td className={tdCls}>
                 <A href={`/purchasing/${p.id}`}>{docNo("purchase", p.number)}</A>
               </td>

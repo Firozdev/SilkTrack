@@ -201,9 +201,11 @@ type Plan = {
   blockers: { table: string; column: string; count: number }[];
 };
 
+const GONE = "This record no longer exists.";
+
 async function label(db: Db, type: Trashable, id: string): Promise<string> {
   const rows = await db.$queryRawUnsafe<{ label: string | null }[]>(`select label from (${LABEL_SQL[type]}) as s(label)`, id);
-  if (!rows.length) throw new UserError("This record no longer exists.");
+  if (!rows.length) throw new UserError(GONE);
   return rows[0].label ?? TRASHABLE[type].noun;
 }
 
@@ -303,31 +305,101 @@ export type DeletePreview = {
   blocked: string | null;
 };
 
+/** Counts for a confirmation page. `root`: leave out this many rows of the record's own type (they are named separately). */
+async function summarize(rows: Map<string, Set<string>>, unlinks: Plan["unlinks"], root: { table: string; n: number }) {
+  const counts = [...rows]
+    .map(([t, ids]) => ({ table: t, count: t === root.table ? ids.size - root.n : ids.size }))
+    .filter((c) => c.count > 0)
+    .map((c) => ({ ...c, noun: tableNoun(c.table, c.count) }))
+    .sort((a, b) => a.table.localeCompare(b.table));
+  // a link cleared on a row that is deleted anyway isn't "kept"
+  const un = new Map<string, Set<string>>();
+  for (const u of unlinks) if (!rows.get(u.table)?.has(u.id)) un.set(u.table, (un.get(u.table) ?? new Set()).add(u.id));
+  const payIds = [...(rows.get("Payment") ?? [])];
+  const pay = payIds.length
+    ? await prisma.$queryRawUnsafe<{ total: string }[]>(`select coalesce(sum("amountBdt"), 0)::text as total from "Payment" where id = any($1::text[])`, payIds)
+    : [{ total: "0" }];
+  return {
+    counts,
+    unlinked: [...un].map(([t, ids]) => ({ table: t, noun: tableNoun(t, ids.size), count: ids.size })),
+    payments: { count: payIds.length, totalBdt: pay[0].total },
+    invoices: rows.get("Invoice")?.size ?? 0,
+    files: (rows.get("Attachment")?.size ?? 0) + (rows.get("GeneratedDocument")?.size ?? 0),
+  };
+}
+
 /** What deleting this record would remove (for the confirmation page). */
 export async function previewDelete(actor: Actor, type: Trashable, id: string): Promise<DeletePreview> {
   assertCan(actor.role, "record:delete");
   assertMayDelete(actor, type, id);
   const p = await plan(prisma, type, id);
-  const counts = [...p.rows]
-    .filter(([t]) => t !== type || p.rows.get(t)!.size > 1)
-    .map(([t, ids]) => ({ table: t, count: t === type ? ids.size - 1 : ids.size }))
-    .map((c) => ({ ...c, noun: tableNoun(c.table, c.count) }))
-    .sort((a, b) => a.table.localeCompare(b.table));
-  const un = new Map<string, number>();
-  for (const u of p.unlinks) un.set(u.table, (un.get(u.table) ?? 0) + 1);
-  const payIds = [...(p.rows.get("Payment") ?? [])];
-  const pay = payIds.length
-    ? await prisma.$queryRawUnsafe<{ total: string }[]>(`select coalesce(sum("amountBdt"), 0)::text as total from "Payment" where id = any($1::text[])`, payIds)
-    : [{ total: "0" }];
   return {
     label: p.label,
-    counts,
-    unlinked: [...un].map(([t, n]) => ({ table: t, noun: tableNoun(t, n), count: n })),
-    payments: { count: payIds.length, totalBdt: pay[0].total },
-    invoices: p.rows.get("Invoice")?.size ?? 0,
-    files: (p.rows.get("Attachment")?.size ?? 0) + (p.rows.get("GeneratedDocument")?.size ?? 0),
+    ...(await summarize(p.rows, p.unlinks, { table: type, n: 1 })),
     blocked: p.blockers.length ? blockMessage(type, p.blockers) : null,
   };
+}
+
+/** Records selected on a list at one time. */
+export const BULK_MAX = 200;
+
+function bulkIds(ids: string[]): string[] {
+  const list = [...new Set(ids.filter(Boolean))];
+  if (!list.length) throw new UserError("Select at least one record.");
+  if (list.length > BULK_MAX) throw new UserError(`Select at most ${BULK_MAX} records at a time.`);
+  return list;
+}
+
+export type BulkPreview = Omit<DeletePreview, "label" | "blocked"> & {
+  /** Every selected record; `skipped` says why one can't be deleted (the others still are). */
+  items: { id: string; label: string; skipped: string | null }[];
+};
+
+/** What deleting the selected records would remove, all together (for the bulk confirmation page). */
+export async function previewBulkDelete(actor: Actor, type: Trashable, ids: string[]): Promise<BulkPreview> {
+  assertCan(actor.role, "record:delete");
+  const rows = new Map<string, Set<string>>();
+  const unlinks: Plan["unlinks"] = [];
+  const items: BulkPreview["items"] = [];
+  for (const id of bulkIds(ids)) {
+    try {
+      assertMayDelete(actor, type, id);
+      const p = await plan(prisma, type, id);
+      if (p.blockers.length) {
+        items.push({ id, label: p.label, skipped: blockMessage(type, p.blockers) });
+        continue;
+      }
+      items.push({ id, label: p.label, skipped: null });
+      for (const [t, set] of p.rows) for (const x of set) rows.set(t, (rows.get(t) ?? new Set()).add(x));
+      unlinks.push(...p.unlinks);
+    } catch (e) {
+      if (!(e instanceof UserError)) throw e;
+      items.push({ id, label: await label(prisma, type, id).catch(() => `This ${TRASHABLE[type].noun}`), skipped: e.message });
+    }
+  }
+  const selected = items.filter((i) => !i.skipped && rows.get(type)?.has(i.id)).length;
+  return { items, ...(await summarize(rows, unlinks, { table: type, n: selected })) };
+}
+
+/**
+ * Move the selected records to Trash, one Trash entry each (so each can be
+ * restored on its own). Records that can't be deleted are skipped with the reason.
+ */
+export async function moveManyToTrash(actor: Actor, type: Trashable, ids: string[]): Promise<{ moved: number; skipped: { label: string; reason: string }[] }> {
+  assertCan(actor.role, "record:delete");
+  let moved = 0;
+  const skipped: { label: string; reason: string }[] = [];
+  for (const id of bulkIds(ids)) {
+    try {
+      await moveToTrash(actor, type, id);
+      moved += 1;
+    } catch (e) {
+      if (!(e instanceof UserError)) throw e;
+      if (e.message === GONE) continue; // already deleted (e.g. with another selected record)
+      skipped.push({ label: await label(prisma, type, id).catch(() => `This ${TRASHABLE[type].noun}`), reason: e.message });
+    }
+  }
+  return { moved, skipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -482,6 +554,34 @@ export async function restoreFromTrash(actor: Actor, trashId: string): Promise<{
     if (code === "23503") throw new UserError("Can't restore: something it is linked to was deleted. Restore that first.");
     throw e;
   }
+}
+
+/**
+ * Restore the selected Trash items. Items that need another selected one back
+ * first (a request and its customer) are retried until nothing more can be restored.
+ */
+export async function restoreManyFromTrash(actor: Actor, trashIds: string[]): Promise<{ restored: number; failed: { label: string; reason: string }[] }> {
+  assertCan(actor.role, "record:delete");
+  let pending = bulkIds(trashIds);
+  const labels = new Map((await prisma.trashItem.findMany({ where: { id: { in: pending } }, select: { id: true, label: true } })).map((i) => [i.id, i.label]));
+  const reasons = new Map<string, string>();
+  let restored = 0;
+  while (pending.length) {
+    const next: string[] = [];
+    for (const id of pending) {
+      try {
+        await restoreFromTrash(actor, id);
+        restored += 1;
+      } catch (e) {
+        if (!(e instanceof UserError)) throw e;
+        reasons.set(id, e.message);
+        next.push(id);
+      }
+    }
+    if (next.length === pending.length) break;
+    pending = next;
+  }
+  return { restored, failed: pending.map((id) => ({ label: labels.get(id) ?? "An item", reason: reasons.get(id) ?? "" })) };
 }
 
 /** Delete trashed items for good, with their uploaded files. No ids = empty the whole Trash. */

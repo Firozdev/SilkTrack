@@ -1,3 +1,5 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
+import { can } from "@/lib/permissions";
 import type { PortalAccountStatus, Prisma, RecordSource } from "@/generated/prisma/client";
 import Link from "next/link";
 import { ActionForm } from "@/components/action-form";
@@ -20,6 +22,7 @@ const PORTAL_FILTERS: { value: PortalAccountStatus | "NONE"; label: string }[] =
 
 export default async function CustomersPage({ searchParams }: PageProps<"/customers">) {
   const user = await requirePagePermission("request:edit");
+  const bulk = can(user.role, "record:delete");
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const portal = PORTAL_FILTERS.find((f) => f.value === sp.portal)?.value;
@@ -97,6 +100,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
       )}
 
       <Card>
+        {bulk && <BulkDeleteBar formId="bulk-customers" type="Customer" back="/customers" />}
         <form className="mb-3 flex flex-wrap gap-2">
           <input name="q" defaultValue={q} placeholder="Name, phone or code" className={`${inputCls} max-w-xs`} />
           <select name="portal" defaultValue={portal ?? ""} className={`${inputCls} max-w-[14rem]`} aria-label="Portal">
@@ -121,11 +125,16 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
           )}
         </form>
         <p className="mb-2 text-xs text-gray-500">{customers.length === 300 ? "Showing the newest 300 – narrow the filters to see more." : `${customers.length} customer(s)`}</p>
-        <Table head={["Code", "Name", "Phone", "District / area", "Joined via", "Portal", "Last login", "Requests", "Shipping"]} empty="No customers match.">
+        <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-customers" />] : []), "Code", "Name", "Phone", "District / area", "Joined via", "Portal", "Last login", "Requests", "Shipping"]} empty="No customers match.">
           {customers.map((c) => {
             const acc = c.portalAccounts[0];
             return (
               <tr key={c.id}>
+                {bulk && (
+                  <td className={tdCls}>
+                    <SelectRow formId="bulk-customers" id={c.id} />
+                  </td>
+                )}
                 <td className={tdCls}>
                   <A href={`/customers/${c.id}`}>{c.code}</A>
                 </td>

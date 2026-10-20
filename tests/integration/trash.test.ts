@@ -12,7 +12,7 @@ import { portalOrder } from "@/server/portal";
 import { saveQuotation, submitQuotation } from "@/server/estimates";
 import { invoiceSample, purchaseSample, recordSamplePayment, requestSampleFromPortal, shipSample } from "@/server/samples";
 import { createShipment } from "@/server/shipments";
-import { FK_RULES, TRASHABLE, deleteForever, listForeignKeys, listTrash, moveToTrash, previewDelete, restoreFromTrash } from "@/server/trash";
+import { FK_RULES, TRASHABLE, deleteForever, listForeignKeys, listTrash, moveManyToTrash, moveToTrash, previewBulkDelete, previewDelete, restoreFromTrash, restoreManyFromTrash } from "@/server/trash";
 import type { Actor } from "@/server/actor";
 import { makeRate, makeUser, resetDb } from "../helpers";
 
@@ -195,6 +195,62 @@ describe("Trash: Admin deletes any record and can restore it", () => {
       expect(r.href, type).toBe(TRASHABLE[type as keyof typeof TRASHABLE].href?.(id) ?? null);
       expect(await dump(), `${type} restored exactly`).toEqual(before);
     }
+  });
+
+  it("bulk: several requests go to Trash together (one entry each) and come back together", async () => {
+    const { customerId, order } = await world();
+    const second = await prisma.order.create({ data: { customerId, source: "STAFF", createdById: admin.id, shippingMethod: "SEA", lines: { create: { lineNo: 1, productName: "Chair", quantity: 2 } } } });
+    const before = await dump();
+
+    const pv = await previewBulkDelete(admin, "Order", [order.id, second.id, order.id]);
+    expect(pv.items.map((i) => i.id)).toEqual([order.id, second.id]);
+    for (const i of pv.items) expect([i.label, i.skipped]).toEqual([expect.stringMatching(/^Request REQ-\d{6} – Karim$/), null]);
+    const counts = Object.fromEntries(pv.counts.map((c) => [c.table, c.count]));
+    expect([counts.Order, counts.OrderLine, counts.Sample, counts.Payment]).toEqual([undefined, 3, 1, 1]);
+    expect(pv.payments).toEqual({ count: 1, totalBdt: "680.00" });
+
+    expect(await moveManyToTrash(admin, "Order", [order.id, second.id])).toEqual({ moved: 2, skipped: [] });
+    expect(await prisma.order.count()).toBe(0);
+    const items = await listTrash(admin);
+    expect(items.map((i) => i.entityType)).toEqual(["Order", "Order"]);
+    expect(await restoreManyFromTrash(admin, items.map((i) => i.id))).toEqual({ restored: 2, failed: [] });
+    expect(await dump()).toEqual(before);
+  });
+
+  it("bulk: records that can't be deleted are skipped with the reason, the rest go", async () => {
+    await world();
+    const unused = await makeUser("CS");
+    const pv = await previewBulkDelete(admin, "User", [china.id, unused.id, admin.id]);
+    expect(pv.items.map((i) => [i.id, i.skipped === null])).toEqual([
+      [china.id, false],
+      [unused.id, true],
+      [admin.id, false],
+    ]);
+    expect(pv.items[0].skipped).toMatch(/has history/);
+    expect(pv.items[2].skipped).toMatch(/your own login/);
+    const r = await moveManyToTrash(admin, "User", [china.id, unused.id, admin.id]);
+    expect(r.moved).toBe(1);
+    expect(r.skipped.map((x) => x.reason)).toEqual([expect.stringMatching(/has history/), expect.stringMatching(/your own login/)]);
+    expect(await prisma.user.count({ where: { id: unused.id } })).toBe(0);
+  });
+
+  it("bulk restore puts a customer back before its request, whatever order they were picked in", async () => {
+    const { customerId, order } = await world();
+    const before = await dump();
+    const a = await moveToTrash(admin, "Order", order.id);
+    const b = await moveToTrash(admin, "Customer", customerId);
+    expect(await restoreManyFromTrash(admin, [a, b])).toEqual({ restored: 2, failed: [] });
+    expect(await dump()).toEqual(before);
+  });
+
+  it("bulk: Admin only, at least one and at most 200 records", async () => {
+    const { order } = await world();
+    await expect(previewBulkDelete(cs, "Order", [order.id])).rejects.toThrow(ForbiddenError);
+    await expect(moveManyToTrash(cs, "Order", [order.id])).rejects.toThrow(ForbiddenError);
+    await expect(restoreManyFromTrash(cs, ["x"])).rejects.toThrow(ForbiddenError);
+    await expect(moveManyToTrash(admin, "Order", [])).rejects.toThrow(/at least one/);
+    await expect(moveManyToTrash(admin, "Order", Array.from({ length: 201 }, (_, i) => `id${i}`))).rejects.toThrow(/at most 200/);
+    expect(await prisma.order.count()).toBe(1);
   });
 
   it("uploaded files stay while in Trash and are removed by delete forever", async () => {
