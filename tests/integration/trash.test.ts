@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { ForbiddenError } from "@/lib/permissions";
 import { BD_TZ, toYmd, today } from "@/lib/dates";
@@ -10,9 +12,16 @@ import { portalOrder } from "@/server/portal";
 import { saveQuotation, submitQuotation } from "@/server/estimates";
 import { invoiceSample, purchaseSample, recordSamplePayment, requestSampleFromPortal, shipSample } from "@/server/samples";
 import { createShipment } from "@/server/shipments";
-import { FK_RULES, deleteForever, listForeignKeys, listTrash, moveToTrash, previewDelete, restoreFromTrash } from "@/server/trash";
+import { FK_RULES, TRASHABLE, deleteForever, listForeignKeys, listTrash, moveToTrash, previewDelete, restoreFromTrash } from "@/server/trash";
 import type { Actor } from "@/server/actor";
 import { makeRate, makeUser, resetDb } from "../helpers";
+
+// Uploaded files go to a temporary folder for this test file.
+const UPLOADS = vi.hoisted(() => {
+  const dir = `${process.env.TMPDIR ?? "/tmp"}/silktrack-trash-${process.pid}`;
+  process.env.UPLOAD_DIR = dir;
+  return dir;
+});
 
 let admin: Actor, cs: Actor, china: Actor;
 const FUTURE = new Date("2099-01-01T00:00:00Z");
@@ -169,4 +178,101 @@ describe("Trash: Admin deletes any record and can restore it", () => {
     expect(await prisma.trashItem.count()).toBe(0);
     expect(await prisma.auditLog.count({ where: { field: "deletedForever" } })).toBe(2);
   });
+
+  it("every kind of record with a Delete button: preview, delete, restore gives back the same data", async () => {
+    const w = await world();
+    const ids = await everyKind(w);
+    expect(Object.keys(TRASHABLE).filter((t) => !ids[t]).sort()).toEqual([]);
+    for (const [type, id] of Object.entries(ids)) {
+      const before = await dump();
+      const pv = await previewDelete(admin, type as keyof typeof TRASHABLE, id);
+      expect(pv.label, type).toMatch(/\w/);
+      expect(pv.blocked, type).toBeNull();
+      const trashId = await moveToTrash(admin, type as keyof typeof TRASHABLE, id);
+      const [{ n }] = await prisma.$queryRawUnsafe<{ n: number }[]>(`select count(*)::int as n from "${type}" where id = $1`, id);
+      expect(n, `${type} deleted`).toBe(0);
+      const r = await restoreFromTrash(admin, trashId);
+      expect(r.href, type).toBe(TRASHABLE[type as keyof typeof TRASHABLE].href?.(id) ?? null);
+      expect(await dump(), `${type} restored exactly`).toEqual(before);
+    }
+  });
+
+  it("uploaded files stay while in Trash and are removed by delete forever", async () => {
+    const { order } = await world();
+    const c = await prisma.comment.create({ data: { orderId: order.id, authorId: admin.id, body: "see photo" } });
+    mkdirSync(UPLOADS, { recursive: true });
+    const file = path.join(UPLOADS, "trash-test-photo.png");
+    writeFileSync(file, "png");
+    await prisma.attachment.create({ data: { commentId: c.id, kind: "PRODUCT_IMAGE", storageKey: "trash-test-photo.png", fileName: "photo.png", mimeType: "image/png", sizeBytes: 3 } });
+
+    let trashId = await moveToTrash(admin, "Comment", c.id);
+    expect(existsSync(file)).toBe(true);
+    await restoreFromTrash(admin, trashId);
+    expect(await prisma.attachment.count({ where: { commentId: c.id } })).toBe(1);
+    trashId = await moveToTrash(admin, "Order", order.id);
+    expect((await previewDelete(admin, "Customer", (await prisma.customer.findFirstOrThrow()).id)).files).toBe(0);
+    await deleteForever(admin, [trashId]);
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it("a customer with 150 requests is deleted and restored in reasonable time", async () => {
+    const { customerId } = await world();
+    for (let i = 0; i < 150; i++) {
+      await prisma.order.create({
+        data: {
+          customerId,
+          source: "STAFF",
+          createdById: admin.id,
+          shippingMethod: "AIR",
+          lines: { create: [1, 2, 3].map((lineNo) => ({ lineNo, productName: `P${i}-${lineNo}`, quantity: 1, trackingEvents: { create: { leg: "SUPPLIER_TO_CHINA", status: "REQUESTED", message: "x" } } })) },
+          comments: { create: { authorId: admin.id, body: `c${i}` } },
+        },
+      });
+    }
+    const before = await dump();
+    let t = Date.now();
+    const trashId = await moveToTrash(admin, "Customer", customerId);
+    const del = Date.now() - t;
+    t = Date.now();
+    await restoreFromTrash(admin, trashId);
+    const res = Date.now() - t;
+    console.log(`150 requests (450 lines): delete ${del} ms, restore ${res} ms`);
+    expect(await dump()).toEqual(before);
+    expect(del + res).toBeLessThan(15_000);
+  }, 60_000);
 });
+
+/** One record of every kind that has a Delete button (on top of world()). */
+async function everyKind(w: Awaited<ReturnType<typeof world>>): Promise<Record<string, string>> {
+  const rate = await prisma.exchangeRate.findFirstOrThrow();
+  const line = await prisma.orderLine.findFirstOrThrow({ where: { orderId: w.order.id } });
+  const supplier = await prisma.supplier.create({ data: { name: "Yiwu Lamps", platform: "ALIBABA_1688" } });
+  const po = await prisma.supplierOrder.create({
+    data: {
+      supplierId: supplier.id, platform: "ALIBABA_1688", purchasedById: china.id, purchaseDate: new Date(), productTotalRmb: "125", totalRmb: "125",
+      exchangeRateId: rate.id, rateUsed: rate.rate, totalBdt: "2125",
+      lines: { create: { orderLineId: line.id, quantity: 10, unitPriceRmb: "12.5", productTotalRmb: "125", totalRmb: "125", rateUsed: rate.rate, totalBdt: "2125" } },
+    },
+  });
+  const rcv = await prisma.receiving.create({ data: { receivedAt: new Date(), receivedById: china.id, grossWeightKg: "2", cbm: "0.01", shippingMethod: "AIR", supplierOrderId: po.id, lines: { create: { orderLineId: line.id, quantityOrdered: 10, quantityReceived: 10 } } } });
+  const issue = await prisma.issue.create({ data: { type: "DAMAGED", source: "CHINA_RECEIVING", description: "box crushed", reportedById: china.id, orderId: w.order.id, receivingId: rcv.id } });
+  const invoice = await prisma.invoice.create({ data: { orderId: w.order.id, exchangeRateId: rate.id, rateUsed: rate.rate, productCostRmb: "125", productCostBdt: "2125", totalBdt: "3000", balanceDueBdt: "3000" } });
+  const claim = await prisma.claim.create({ data: { orderId: w.order.id, description: "one broken", createdById: cs.id, issueId: issue.id } });
+  const delivery = await prisma.delivery.create({ data: { orderId: w.order.id, courier: "PATHAO", assignedById: cs.id } });
+  const comment = await prisma.comment.create({ data: { orderId: w.order.id, authorId: cs.id, body: "call before delivery" } });
+  const file = await prisma.attachment.create({ data: { orderId: w.order.id, kind: "PRODUCT_IMAGE", storageKey: "missing.png", fileName: "lamp.png", mimeType: "image/png", sizeBytes: 1 } });
+  const sho = await prisma.shippingOrder.create({ data: { customerId: w.customerId, shipmentId: w.sea.id } });
+  const shippingRate = await prisma.shippingRate.create({ data: { effectiveFrom: new Date("2026-01-01T00:00:00Z"), airPerKgBdt: "900" } });
+  await prisma.shippingOrder.update({ where: { id: sho.id }, data: { shippingRateId: shippingRate.id } });
+  const customerLogin = await prisma.portalAccount.findFirstOrThrow({ where: { customerId: w.customerId } });
+  const proof = await prisma.paymentSubmission.create({ data: { customerId: w.customerId, accountId: customerLogin.id, orderId: w.order.id, amountBdt: "1000", method: "BKASH", reference: "TX1", paidAt: new Date() } });
+  const payment = await prisma.payment.findFirstOrThrow();
+  const unusedRate = await makeRate("2020-01-01", "15", admin.id);
+  const unusedUser = await makeUser("CS");
+  return {
+    Customer: w.customerId, Order: w.order.id, Estimate: w.estimate.id, Sample: w.sample.id, ShippingOrder: sho.id, Shipment: w.sea.id,
+    SupplierOrder: po.id, Receiving: rcv.id, Payment: payment.id, Invoice: invoice.id, PaymentSubmission: proof.id, Issue: issue.id,
+    Claim: claim.id, Delivery: delivery.id, Comment: comment.id, Attachment: file.id, Supplier: supplier.id, PortalAccount: w.agentId,
+    User: unusedUser.id, ExchangeRate: unusedRate.id, ShippingRate: shippingRate.id,
+  };
+}

@@ -29,7 +29,7 @@ export const restoreAction = formAction(async (fd) => {
   revalidatePath("/", "layout");
   // Open the restored record; records without a page of their own (payments, comments…) were put back where they were.
   if (r.href) redirect(r.href);
-  return { ok: true, message: "Restored." };
+  redirect(`/settings/trash?done=restored&type=${r.type}`);
 });
 
 export const deleteForeverAction = formAction(async (fd) => {
@@ -37,7 +37,7 @@ export const deleteForeverAction = formAction(async (fd) => {
   const { id } = z.object({ id: z.string().min(1) }).parse(fields(fd));
   await deleteForever(user, [id]);
   revalidatePath("/settings/trash");
-  return { ok: true, message: "Deleted forever." };
+  redirect("/settings/trash?done=deleted");
 });
 
 export const emptyTrashAction = formAction(async () => {
