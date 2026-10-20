@@ -1,3 +1,5 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
+import { can } from "@/lib/permissions";
 import Link from "next/link";
 import { ActionForm } from "@/components/action-form";
 import { A, Badge, Card, Field, Table, inputCls, tdCls } from "@/components/ui";
@@ -36,6 +38,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
 
 async function Staff({ meId, role, tz }: { meId: string; role: Role; tz: string }) {
   const users = await listStaff();
+  const bulk = can(role, "record:delete");
   return (
     <>
       <Card title="Add a staff user">
@@ -68,9 +71,11 @@ async function Staff({ meId, role, tz }: { meId: string; role: Role; tz: string 
       </Card>
 
       <Card title={`Staff users (${users.length})`}>
-        <Table head={["User", "Role", "Status", "Last login", ""]}>
+        {bulk && <BulkDeleteBar formId="bulk-staff" type="User" back="/settings/users" />}
+        <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-staff" />] : []), "User", "Role", "Status", "Last login", ""]}>
           {users.map((u) => (
             <tr key={u.id} className={u.active ? "" : "bg-gray-50 text-gray-500"}>
+              {bulk && <td className={tdCls}>{u.id !== meId && <SelectRow formId="bulk-staff" id={u.id} />}</td>}
               <td className={tdCls}>
                 <b>{u.name}</b>
                 {u.id === meId && <span className="ml-1 text-xs text-gray-400">(you)</span>}
@@ -170,6 +175,7 @@ async function Staff({ meId, role, tz }: { meId: string; role: Role; tz: string 
 
 async function Portal({ role, tz }: { role: Role; tz: string }) {
   const rows = await listPortalLogins();
+  const bulk = can(role, "record:delete");
   return (
     <>
       <Card title="Add an agent">
@@ -190,9 +196,15 @@ async function Portal({ role, tz }: { role: Role; tz: string }) {
       </Card>
 
       <Card title={`Customers & agents (${rows.length})`}>
-        <Table head={["Login", "Type", "Status", "Last login", ""]}>
+        {bulk && <BulkDeleteBar formId="bulk-portal" type="PortalAccount" back="/settings/users?tab=portal" />}
+        <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-portal" />] : []), "Login", "Type", "Status", "Last login", ""]}>
           {rows.map((a) => (
             <tr key={a.id} className={a.status === "ACTIVE" ? "" : "text-gray-500"}>
+              {bulk && (
+                <td className={tdCls}>
+                  <SelectRow formId="bulk-portal" id={a.id} />
+                </td>
+              )}
               <td className={tdCls}>
                 <b>{a.name}</b>
                 <div className="text-xs text-gray-500">

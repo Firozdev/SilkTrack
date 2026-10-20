@@ -1,3 +1,4 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
 import type { Prisma } from "@/generated/prisma/client";
 import Link from "next/link";
 import { A, Badge, Card, PageHeader, Table, btnCls, btnPrimaryCls, inputCls, tdCls } from "@/components/ui";
@@ -21,6 +22,7 @@ function Usage({ value, max }: { value: Prisma.Decimal; max: Prisma.Decimal | nu
 
 export default async function ShipmentsPage({ searchParams }: PageProps<"/shipments">) {
   const user = await requireUser();
+  const bulk = can(user.role, "record:delete");
   const sp = await searchParams;
   const method = sp.method === "AIR" || sp.method === "SEA" ? sp.method : undefined;
   const status = SHIPMENT_FLOW.find((s) => s === sp.status);
@@ -45,6 +47,7 @@ export default async function ShipmentsPage({ searchParams }: PageProps<"/shipme
       />
       <div className="grid gap-5 xl:grid-cols-4">
         <Card className="xl:col-span-4">
+          {bulk && <BulkDeleteBar formId="bulk-shipments" type="Shipment" back="/shipments" />}
           <form className="mb-3 flex flex-wrap gap-2">
             <select name="method" defaultValue={method ?? ""} className={`${inputCls} max-w-[8rem]`}>
               <option value="">Air + sea</option>
@@ -61,9 +64,14 @@ export default async function ShipmentsPage({ searchParams }: PageProps<"/shipme
             </select>
             <button className={btnCls}>Filter</button>
           </form>
-          <Table head={["Shipment", "Cut-off", "Departure", "ETA BD", "Items", "Gross", "CBM", "Status"]} empty="No shipments yet – they are created automatically when the first item is received.">
+          <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-shipments" />] : []), "Shipment", "Cut-off", "Departure", "ETA BD", "Items", "Gross", "CBM", "Status"]} empty="No shipments yet – they are created automatically when the first item is received.">
             {shipments.map((s) => (
               <tr key={s.id}>
+                {bulk && (
+                  <td className={tdCls}>
+                    <SelectRow formId="bulk-shipments" id={s.id} />
+                  </td>
+                )}
                 <td className={tdCls}>
                   <A href={`/shipments/${s.id}`}>{s.code}</A>
                   <div className="text-xs text-gray-400">{s.forwarder}</div>

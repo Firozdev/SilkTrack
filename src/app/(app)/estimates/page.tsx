@@ -1,3 +1,4 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
 import Link from "next/link";
 import type { EstimateStatus } from "@/generated/prisma/client";
 import { A, Badge, Card, PageHeader, Table, btnCls, btnPrimaryCls, inputCls, tdCls } from "@/components/ui";
@@ -11,6 +12,7 @@ const STATUSES: EstimateStatus[] = ["DRAFT", "SUBMITTED_BY_CHINA", "REVIEWED_BY_
 
 export default async function QuotationsPage({ searchParams }: PageProps<"/estimates">) {
   const user = await requireUser();
+  const bulk = can(user.role, "record:delete");
   const sp = await searchParams;
   const status = STATUSES.find((s) => s === sp.status);
   const showSelling = canSeeSelling(user);
@@ -56,6 +58,7 @@ export default async function QuotationsPage({ searchParams }: PageProps<"/estim
         </Card>
       )}
       <Card title="Quotations">
+        {bulk && <BulkDeleteBar formId="bulk-estimates" type="Estimate" back="/estimates" />}
         <form className="mb-3 flex gap-2">
           <select name="status" defaultValue={status ?? ""} className={`${inputCls} max-w-xs`}>
             <option value="">All current</option>
@@ -67,9 +70,14 @@ export default async function QuotationsPage({ searchParams }: PageProps<"/estim
           </select>
           <button className={btnCls}>Filter</button>
         </form>
-        <Table head={["Quotation", "Request", "Customer", "Total RMB", "Weight / CBM", ...(showSelling ? ["Selling"] : []), "Valid until", "Status"]} empty="No quotations yet.">
+        <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-estimates" />] : []), "Quotation", "Request", "Customer", "Total RMB", "Weight / CBM", ...(showSelling ? ["Selling"] : []), "Valid until", "Status"]} empty="No quotations yet.">
           {list.map((e) => (
             <tr key={e.id}>
+              {bulk && (
+                <td className={tdCls}>
+                  <SelectRow formId="bulk-estimates" id={e.id} />
+                </td>
+              )}
               <td className={tdCls}>
                 <A href={`/estimates/${e.id}`}>
                   {docNo("estimate", e.number)} v{e.version}

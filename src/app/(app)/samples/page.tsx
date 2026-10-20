@@ -1,3 +1,4 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
 import type { SampleStatus } from "@/generated/prisma/client";
 import Link from "next/link";
 import { A, Badge, Card, PageHeader, Table, btnCls, btnPrimaryCls, inputCls, tdCls } from "@/components/ui";
@@ -9,6 +10,7 @@ import { SAMPLE_FLOW, listSamples, sampleNo } from "@/server/samples";
 
 export default async function SamplesPage({ searchParams }: PageProps<"/samples">) {
   const user = await requireUser();
+  const bulk = can(user.role, "record:delete");
   const sp = await searchParams;
   const status = [...SAMPLE_FLOW, "CANCELLED"].find((s) => s === sp.status) as SampleStatus | undefined;
   const samples = await listSamples(status ? { status } : sp.all ? {} : { status: { notIn: ["DELIVERED", "CANCELLED"] } });
@@ -26,6 +28,7 @@ export default async function SamplesPage({ searchParams }: PageProps<"/samples"
         }
       />
       <Card>
+        {bulk && <BulkDeleteBar formId="bulk-samples" type="Sample" back="/samples" />}
         <form className="mb-3 flex gap-2">
           <select name="status" defaultValue={status ?? ""} className={`${inputCls} max-w-xs`}>
             <option value="">Open samples</option>
@@ -37,9 +40,14 @@ export default async function SamplesPage({ searchParams }: PageProps<"/samples"
           </select>
           <button className={btnCls}>Filter</button>
         </form>
-        <Table head={["Sample", "Order", "Customer", "Products", "Invoice", "Shipping", "Requested", "Status"]} empty="No samples.">
+        <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-samples" />] : []), "Sample", "Order", "Customer", "Products", "Invoice", "Shipping", "Requested", "Status"]} empty="No samples.">
           {samples.map((s) => (
             <tr key={s.id}>
+              {bulk && (
+                <td className={tdCls}>
+                  <SelectRow formId="bulk-samples" id={s.id} />
+                </td>
+              )}
               <td className={tdCls}>
                 <A href={`/samples/${s.id}`}>{sampleNo(s)}</A>
               </td>

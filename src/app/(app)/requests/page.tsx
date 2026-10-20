@@ -1,3 +1,4 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
 import Link from "next/link";
 import type { Prisma } from "@/generated/prisma/client";
 import { A, Badge, Card, PageHeader, Table, btnCls, btnPrimaryCls, inputCls, tdCls } from "@/components/ui";
@@ -16,6 +17,7 @@ const AWAITING_QUOTE = "AWAITING_QUOTE";
 
 export default async function RequestsPage({ searchParams }: PageProps<"/requests">) {
   const user = await requireUser();
+  const bulk = can(user.role, "record:delete");
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const rs = typeof sp.rs === "string" && ([...REQUEST_STATUSES, AWAITING_QUOTE] as readonly string[]).includes(sp.rs) ? sp.rs : "";
@@ -84,6 +86,7 @@ export default async function RequestsPage({ searchParams }: PageProps<"/request
         </Card>
       )}
       <Card>
+        {bulk && <BulkDeleteBar formId="bulk-requests" type="Order" back="/requests" />}
         <form className="mb-3 flex flex-wrap gap-2">
           <input name="q" defaultValue={q} placeholder="Search REQ/SMP no., customer, phone, product" className={`${inputCls} max-w-xs`} />
           <select name="rs" defaultValue={rs} className={`${inputCls} max-w-[12rem]`}>
@@ -102,9 +105,14 @@ export default async function RequestsPage({ searchParams }: PageProps<"/request
           </select>
           <button className={btnCls}>Filter</button>
         </form>
-        <Table head={["No.", "Requested", "Customer", "Type", "Items", "Request", "Order status", "Samples", "By"]} empty="No requests found.">
+        <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-requests" />] : []), "No.", "Requested", "Customer", "Type", "Items", "Request", "Order status", "Samples", "By"]} empty="No requests found.">
           {orders.map((o) => (
             <tr key={o.id}>
+              {bulk && (
+                <td className={tdCls}>
+                  <SelectRow formId="bulk-requests" id={o.id} />
+                </td>
+              )}
               <td className={tdCls}>
                 <A href={`/requests/${o.id}`}>{docNo("order", o.number)}</A>
               </td>

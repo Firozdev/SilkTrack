@@ -1,3 +1,4 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
 import Link from "next/link";
 import { ScanInput } from "@/components/scan-input";
 import { A, Badge, Card, PageHeader, Table, btnCls, btnPrimaryCls, inputCls, tdCls } from "@/components/ui";
@@ -12,6 +13,7 @@ import { findShippingByTracking, shippingNo } from "@/server/shipping-orders";
 
 export default async function ReceivingPage({ searchParams }: PageProps<"/receiving">) {
   const user = await requireUser();
+  const bulk = can(user.role, "record:delete");
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const status = (["READY_TO_SHIP", "IN_SHIPMENT", "REPACKED"] as const).find((s) => s === sp.status);
@@ -128,6 +130,7 @@ export default async function ReceivingPage({ searchParams }: PageProps<"/receiv
       </Card>
 
       <Card title="Received parcels">
+        {bulk && <BulkDeleteBar formId="bulk-receiving" type="Receiving" back="/receiving" />}
         <form className="mb-3 flex gap-2">
           <select name="status" defaultValue={status ?? ""} className={`${inputCls} max-w-xs`}>
             <option value="">All</option>
@@ -138,9 +141,14 @@ export default async function ReceivingPage({ searchParams }: PageProps<"/receiv
           <button className={btnCls}>Filter</button>
         </form>
         <form action="/receiving/repack">
-          <Table head={[canReceive ? "Repack" : "", "Parcel", "Received", "Orders", "Weight", "CBM", "Method", "Shipment", "Status"]} empty="No parcels received yet.">
+          <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-receiving" />] : []), canReceive ? "Repack" : "", "Parcel", "Received", "Orders", "Weight", "CBM", "Method", "Shipment", "Status"]} empty="No parcels received yet.">
             {list.map((r) => (
               <tr key={r.id}>
+                {bulk && (
+                  <td className={tdCls}>
+                    <SelectRow formId="bulk-receiving" id={r.id} />
+                  </td>
+                )}
                 <td className={tdCls}>{canReceive && r.status !== "REPACKED" && <input type="checkbox" name="ids" value={r.id} aria-label="Select for repacking" />}</td>
                 <td className={tdCls}>
                   <A href={`/receiving/${r.id}`}>{docNo("receiving", r.number)}</A>

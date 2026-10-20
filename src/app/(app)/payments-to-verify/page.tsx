@@ -1,3 +1,5 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
+import { can } from "@/lib/permissions";
 import { ActionForm } from "@/components/action-form";
 import { A, Alert, Attachments, Badge, Card, Field, PageHeader, Table, btnCls, inputCls, tdCls } from "@/components/ui";
 import { fmtDateTime, fmtDay } from "@/lib/dates";
@@ -16,6 +18,7 @@ function target(s: { order: { id: string; number: number } | null; shippingOrder
 
 export default async function PaymentsToVerifyPage({ searchParams }: PageProps<"/payments-to-verify">) {
   const user = await requirePagePermission("payment:record");
+  const bulk = can(user.role, "record:delete");
   const sp = await searchParams;
   // ?id= shows one report (linked from the dashboard), wherever it is now.
   const only = typeof sp.id === "string" ? { id: sp.id } : {};
@@ -112,11 +115,17 @@ export default async function PaymentsToVerifyPage({ searchParams }: PageProps<"
         </div>
       </Card>
       <Card title="Recently reviewed">
-        <Table head={["Report", "Bill", "Customer", "Amount", "TrxID", "Reviewed", "Status"]} empty="None yet.">
+        {bulk && <BulkDeleteBar formId="bulk-payments-to-verify" type="PaymentSubmission" back="/payments-to-verify" />}
+        <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-payments-to-verify" />] : []), "Report", "Bill", "Customer", "Amount", "TrxID", "Reviewed", "Status"]} empty="None yet.">
           {recent.map((s) => {
             const t = target(s);
             return (
               <tr key={s.id}>
+                {bulk && (
+                  <td className={tdCls}>
+                    <SelectRow formId="bulk-payments-to-verify" id={s.id} />
+                  </td>
+                )}
                 <td className={tdCls}>{submissionNo(s)}</td>
                 <td className={tdCls}>
                   <A href={t.href}>{t.label}</A>

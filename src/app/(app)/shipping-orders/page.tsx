@@ -1,3 +1,4 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
 import type { ShippingOrderStatus } from "@/generated/prisma/client";
 import Link from "next/link";
 import { A, Badge, Card, PageHeader, Table, btnCls, btnPrimaryCls, inputCls, tdCls } from "@/components/ui";
@@ -11,6 +12,7 @@ const STATUSES: ShippingOrderStatus[] = [...SHIPPING_FLOW, "ON_HOLD", "CANCELLED
 
 export default async function ShippingOrdersPage({ searchParams }: PageProps<"/shipping-orders">) {
   const user = await requireUser();
+  const bulk = can(user.role, "record:delete");
   const sp = await searchParams;
   const status = STATUSES.find((s) => s === sp.status);
   const list = await listShippingOrders(status ? { status } : { status: { notIn: ["DELIVERED", "CANCELLED"] } });
@@ -28,6 +30,7 @@ export default async function ShippingOrdersPage({ searchParams }: PageProps<"/s
         }
       />
       <Card>
+        {bulk && <BulkDeleteBar formId="bulk-shipping-orders" type="ShippingOrder" back="/shipping-orders" />}
         <form className="mb-3 flex gap-2">
           <select name="status" defaultValue={status ?? ""} className={`${inputCls} max-w-xs`}>
             <option value="">Open orders</option>
@@ -39,9 +42,14 @@ export default async function ShippingOrdersPage({ searchParams }: PageProps<"/s
           </select>
           <button className={btnCls}>Filter</button>
         </form>
-        <Table head={["Order", "Customer", "Products", "Method", "China weight / CBM", "Shipment", "Created", "Status"]} empty="No shipping orders.">
+        <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-shipping-orders" />] : []), "Order", "Customer", "Products", "Method", "China weight / CBM", "Shipment", "Created", "Status"]} empty="No shipping orders.">
           {list.map((s) => (
             <tr key={s.id}>
+              {bulk && (
+                <td className={tdCls}>
+                  <SelectRow formId="bulk-shipping-orders" id={s.id} />
+                </td>
+              )}
               <td className={tdCls}>
                 <A href={`/shipping-orders/${s.id}`}>{shippingNo(s)}</A>
                 {s.qaRequested && <div className="text-xs text-gray-400">QA {s.qaResult ? s.qaResult.toLowerCase() : "requested"}</div>}

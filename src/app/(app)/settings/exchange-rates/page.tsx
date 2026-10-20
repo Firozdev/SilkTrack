@@ -1,3 +1,4 @@
+import { BulkDeleteBar, SelectAll, SelectRow } from "@/components/bulk-select";
 import { ActionForm } from "@/components/action-form";
 import { RateChart } from "@/components/rate-chart";
 import { Card, Field, Table, inputCls, tdCls } from "@/components/ui";
@@ -11,6 +12,7 @@ import { saveRateAction } from "./actions";
 
 export default async function ExchangeRatesPage() {
   const user = await requireUser();
+  const bulk = can(user.role, "record:delete");
   const rates = await listRates(180);
   const points = [...rates].reverse().map((r) => ({ date: toYmd(r.effectiveDate), rate: r.rate.toString() }));
 
@@ -48,9 +50,15 @@ export default async function ExchangeRatesPage() {
         </Card>
       </div>
       <Card title="Rate history" className="mt-5">
-        <Table head={["Date", "Rate", "Buying", "Selling", "Note", "Updated by", "Updated at", ""]} empty="No rates yet.">
+        {bulk && <BulkDeleteBar formId="bulk-rates" type="ExchangeRate" back="/settings/exchange-rates" />}
+        <Table head={[...(bulk ? [<SelectAll key="all" formId="bulk-rates" />] : []), "Date", "Rate", "Buying", "Selling", "Note", "Updated by", "Updated at", ""]} empty="No rates yet.">
           {rates.map((r) => (
             <tr key={r.id}>
+              {bulk && (
+                <td className={tdCls}>
+                  <SelectRow formId="bulk-rates" id={r.id} />
+                </td>
+              )}
               <td className={tdCls}>{fmtDay(r.effectiveDate)}</td>
               <td className={`${tdCls} font-semibold`}>{fmtRate(r.rate)}</td>
               <td className={tdCls}>{fmtRate(r.buyingRate)}</td>
