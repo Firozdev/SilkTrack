@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ActionForm } from "@/components/action-form";
 import { A, Badge, Card, Field, Table, inputCls, tdCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
+import type { Role } from "@/generated/prisma/enums";
 import { fmtDateTime } from "@/lib/dates";
 import { requirePagePermission } from "@/lib/session";
 import { ROLE_LABEL, ROLE_SUMMARY } from "@/lib/roles";
@@ -27,12 +29,12 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
           Customers &amp; agents
         </Link>
       </div>
-      {tab === "staff" ? <Staff meId={me.id} tz={me.timezone} /> : <Portal tz={me.timezone} />}
+      {tab === "staff" ? <Staff meId={me.id} role={me.role} tz={me.timezone} /> : <Portal role={me.role} tz={me.timezone} />}
     </div>
   );
 }
 
-async function Staff({ meId, tz }: { meId: string; tz: string }) {
+async function Staff({ meId, role, tz }: { meId: string; role: Role; tz: string }) {
   const users = await listStaff();
   return (
     <>
@@ -131,13 +133,14 @@ async function Staff({ meId, tz }: { meId: string; tz: string }) {
                         <input type="hidden" name="active" value={u.active ? "no" : "yes"} />
                       </ActionForm>
                     )}
+                    {u.id !== meId && <DeleteRecordLink role={role} type="User" id={u.id} back="/settings/users" small />}
                   </div>
                 </details>
               </td>
             </tr>
           ))}
         </Table>
-        <p className="mt-2 text-xs text-gray-500">Users are disabled, not deleted, so their history stays. There is always at least one active Admin.</p>
+        <p className="mt-2 text-xs text-gray-500">Disable users who did work, so their history stays. Only users with no history can be deleted. There is always at least one active Admin.</p>
       </Card>
 
       <Card title="Roles &amp; permissions">
@@ -165,7 +168,7 @@ async function Staff({ meId, tz }: { meId: string; tz: string }) {
   );
 }
 
-async function Portal({ tz }: { tz: string }) {
+async function Portal({ role, tz }: { role: Role; tz: string }) {
   const rows = await listPortalLogins();
   return (
     <>
@@ -222,6 +225,7 @@ async function Portal({ tz }: { tz: string }) {
                       <input type="hidden" name="disabled" value={a.status === "ACTIVE" ? "yes" : "no"} />
                     </ActionForm>
                   )}
+                  <DeleteRecordLink role={role} type="PortalAccount" id={a.id} back="/settings/users?tab=portal" small />
                 </div>
               </td>
             </tr>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { A, Alert, Attachments, Badge, Card, Dl, PageHeader, Table, btnCls, inputCls, tdCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
 import { rmbToBdt, sum, type Decimal } from "@/lib/money";
 import { BD_TZ, fmtDateTime, fmtDay, today } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg, fmtNum, fmtRate, fmtRmb, humanize } from "@/lib/format";
@@ -42,6 +43,7 @@ export default async function QuotationPage({ params }: PageProps<"/estimates/[i
         }
         actions={
           <>
+            <DeleteRecordLink role={user.role} type="Estimate" id={e.id} />
             <Link href={`/requests/${e.order.id}`} className={btnCls}>
               Request
             </Link>

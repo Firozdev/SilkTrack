@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { A, Attachments, Badge, Card, Dl, Field, PageHeader, Table, inputCls, tdCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
 import { fmtDateTime, fmtDay } from "@/lib/dates";
 import { docNo, fmtBdt, fmtNum, fmtRate, fmtRmb, humanize } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -43,6 +44,7 @@ export default async function PurchasePage({ params }: PageProps<"/purchasing/[i
             <Badge value={so.status} /> {humanize(so.platform)} · by {so.purchasedBy.name}, {fmtDateTime(so.purchaseDate, user.timezone)}
           </span>
         }
+        actions={<DeleteRecordLink role={user.role} type="SupplierOrder" id={so.id} />}
       />
       <div className="grid gap-5 xl:grid-cols-3">
         <div className="space-y-5 xl:col-span-2">

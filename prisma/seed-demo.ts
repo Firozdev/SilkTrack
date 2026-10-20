@@ -312,6 +312,22 @@ async function main() {
 
   console.log(`Demo customer's ${"SHO-" + String(shipPortal.number).padStart(6, "0")} and REQ-${String(inShipment.number).padStart(6, "0")} (Table fan) are in shipment ${shipment.code}.`);
   console.log(`Invoiced demo order SHO-${String(invoiced.number).padStart(6, "0")}: download its invoice / receipt PDFs from the staff app.`);
+
+  // A throwaway customer to try Delete → Trash → Restore on (Admin): a request with a comment and a payment.
+  const junk = await customer("C-TRASH", "Test Customer – delete me (demo)", "01700000097");
+  const junkOrder = await prisma.order.create({
+    data: {
+      customerId: junk.id,
+      source: "STAFF",
+      createdById: admin.id,
+      requestStatus: "NEW",
+      shippingMethod: "AIR",
+      lines: { create: [line("Test product – delete me (demo)", 1)] },
+      comments: { create: { authorId: admin.id, body: "Test comment – delete me" } },
+    },
+  });
+  await prisma.payment.create({ data: { orderId: junkOrder.id, type: "ADVANCE", amountBdt: "500", method: "CASH", paidAt: new Date(), receivedById: admin.id } });
+  console.log(`Try deleting customer C-TRASH or REQ-${String(junkOrder.number).padStart(6, "0")} as Admin, then restore it from Settings → Trash.`);
 }
 
 main()

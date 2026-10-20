@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import Link from "next/link";
 import { A, Alert, Attachments, Badge, Card, Dl, Field, PageHeader, Table, btnPrimaryCls, inputCls, tdCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
 import { fmtDateTime, fmtDay } from "@/lib/dates";
 import { docNo, fmtBdt, fmtRmb, humanize } from "@/lib/format";
 import { sum } from "@/lib/money";
@@ -78,6 +79,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
             {order.createdBy?.name ?? (order.placedByAccount?.kind === "AGENT" ? `agent ${order.placedByAccount.name} (portal)` : "the customer (portal)")}, {fmtDateTime(order.requestedAt, user.timezone)}
           </span>
         }
+        actions={<DeleteRecordLink role={user.role} type="Order" id={order.id} />}
       />
 
       {order.requestStatus === "CUSTOMER_APPROVED" && !released && order.advanceRequestedAt && (
@@ -276,7 +278,8 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
                 <div key={c.id} className={`rounded-md p-2.5 text-sm ${c.author.role === "PURCHASE" ? "bg-amber-50" : "bg-blue-50"}`}>
                   <div className="text-xs text-gray-500">
                     <b className="text-gray-700">{c.author.name}</b> ({c.author.role === "PURCHASE" ? "China" : c.author.role === "CS" ? "Bangladesh" : "Admin"}) ·{" "}
-                    {fmtDateTime(c.createdAt, user.timezone)}
+                    {fmtDateTime(c.createdAt, user.timezone)}{" "}
+                    <DeleteRecordLink role={user.role} type="Comment" id={c.id} back={`/requests/${order.id}`} small />
                   </div>
                   <p className="mt-1 whitespace-pre-wrap">{c.body}</p>
                   <Attachments items={c.attachments} />
@@ -417,7 +420,7 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
 
           {can(user.role, "price:viewSelling") && (
             <Card title="Payments">
-              <Table head={["Date", "Type", "Amount", "Method", "Receipt"]} empty="No payments yet.">
+              <Table head={["Date", "Type", "Amount", "Method", "Receipt", ""]} empty="No payments yet.">
                 {payments.map((p) => (
                   <tr key={p.id}>
                     <td className={tdCls}>{fmtDateTime(p.paidAt, user.timezone)}</td>
@@ -435,6 +438,9 @@ export default async function RequestPage({ params }: PageProps<"/requests/[id]"
                       ) : (
                         "—"
                       )}
+                    </td>
+                    <td className={tdCls}>
+                      <DeleteRecordLink role={user.role} type="Payment" id={p.id} back={`/requests/${order.id}`} small />
                     </td>
                   </tr>
                 ))}

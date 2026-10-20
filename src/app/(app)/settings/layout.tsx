@@ -19,6 +19,7 @@ export default async function SettingsLayout({ children }: { children: ReactNode
         ]
       : []),
     ...(can(user.role, "user:manage") ? [{ href: "/settings/users", label: "Users" }] : []),
+    ...(can(user.role, "record:delete") ? [{ href: "/settings/trash", label: "Trash" }] : []),
   ];
   return (
     <>

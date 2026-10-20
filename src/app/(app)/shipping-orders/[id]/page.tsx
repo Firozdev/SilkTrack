@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { CartonRows } from "@/components/carton-rows";
 import { A, Alert, Attachments, Badge, Card, Dl, Field, PageHeader, inputCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
 import { fmtDateTime, fmtDay } from "@/lib/dates";
 import { fmtBdt, fmtCbm, fmtKg, fmtNum, fmtRate, humanize } from "@/lib/format";
 import { can, canSeeSelling, redactFor } from "@/lib/permissions";
@@ -106,6 +107,7 @@ export default async function ShippingOrderPage({ params }: PageProps<"/shipping
             {s.qaRequested && " · QA requested"} · {s.source === "PORTAL" ? (s.placedByAccount?.kind === "AGENT" ? `from agent ${s.placedByAccount.name} (portal)` : "from customer portal") : `by ${s.createdBy?.name ?? "—"}`}, {fmtDateTime(s.createdAt, user.timezone)}
           </span>
         }
+        actions={<DeleteRecordLink role={user.role} type="ShippingOrder" id={s.id} />}
       />
       {s.status === "CANCELLED" && <Alert tone="error">This shipping order was cancelled – see the tracking below for the reason.</Alert>}
       {held && <Alert tone="warn">On hold – see the tracking below for the reason.</Alert>}

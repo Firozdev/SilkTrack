@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { A, Alert, Attachments, Badge, Card, Dl, PageHeader, Table, inputCls, tdCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
 import { fmtDateTime } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg, fmtNum, humanize } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -40,6 +41,7 @@ export default async function ReceivingDetail({ params, searchParams }: PageProp
             <Badge value={r.status} /> <Badge value={r.condition} /> received {fmtDateTime(r.receivedAt, user.timezone)} by {r.receivedBy.name}
           </span>
         }
+        actions={<DeleteRecordLink role={user.role} type="Receiving" id={r.id} />}
       />
       {typeof warn === "string" && <Alert tone="warn">⚠ {warn}</Alert>}
       {r.repackedInto && (
