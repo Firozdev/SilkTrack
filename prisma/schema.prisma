@@ -416,6 +416,7 @@ model User {
   auditLogs          AuditLog[]
   settingsUpdated    Setting[]
   generatedDocuments GeneratedDocument[]  @relation("GeneratedDocumentCreatedBy")
+  trashItems         TrashItem[]          @relation("TrashDeletedBy")
 }
 
 /// Admin-managed settings: bulk threshold, price-change %, BD weight
@@ -1801,4 +1802,27 @@ model CustomInvoice {
   updatedAt       DateTime      @updatedAt
 
   @@index([accountId, shippingOrderId])
+}
+
+/// Records Admin deleted: an exact copy, so they can be restored.
+model TrashItem {
+  id          String   @id @default(cuid())
+  /// "Customer", "Order", "Sample", …
+  entityType  String
+  entityId    String
+  /// e.g. "Order REQ-000012 – Rahim Traders"
+  label       String
+  /// What went with it, e.g. { "Payment": 3, "Attachment": 6 }
+  summary     Json
+  /// Copies of the deleted rows: { table: [row, …] }
+  rows        Json
+  /// Links that were cleared (e.g. orders taken out of a shipment), put back on restore
+  unlinks     Json
+  /// Uploaded files – kept on disk until deleted forever
+  files       Json
+  deletedById String?
+  deletedBy   User?    @relation("TrashDeletedBy", fields: [deletedById], references: [id])
+  deletedAt   DateTime @default(now())
+
+  @@index([deletedAt])
 }

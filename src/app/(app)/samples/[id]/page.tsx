@@ -3,6 +3,7 @@ import { NotificationHistory } from "@/components/notification-history";
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { A, Alert, Attachments, Badge, Card, Dl, Field, PageHeader, btnCls, inputCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
 import { fmtDateTime, fmtDay, toYmd } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg, fmtNum, fmtRate, fmtRmb, humanize } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -65,7 +66,12 @@ export default async function SamplePage({ params }: PageProps<"/samples/[id]">)
             <Badge value={s.status} /> <A href={`/customers/${s.customer.id}`}>{s.customer.name} ({s.customer.code})</A> · requested by {s.requestedBy?.name ?? (s.requestedByAccount ? `${s.requestedByAccount.name} (${s.requestedByAccount.kind === "AGENT" ? "agent" : "customer"}, portal)` : "—")}, {fmtDateTime(s.requestedAt, user.timezone)}
           </span>
         }
-        actions={s.order && <A href={`/requests/${s.order.id}`}>Open request →</A>}
+        actions={
+          <>
+            <DeleteRecordLink role={user.role} type="Sample" id={s.id} />
+            {s.order && <A href={`/requests/${s.order.id}`}>Open request →</A>}
+          </>
+        }
       />
       {s.status === "CANCELLED" && <Alert tone="error">This sample was cancelled – see the tracking below for the reason.</Alert>}
       {s.requestNote && <Alert tone="info">Request note: {s.requestNote}</Alert>}

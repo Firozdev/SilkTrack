@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { A, Badge, Card, Dl, PageHeader, Table, btnCls, btnPrimaryCls, inputCls, tdCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
 import { fmtDateTime } from "@/lib/dates";
 import { docNo, fmtBdt, humanize } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -32,6 +33,7 @@ export default async function CustomerPage({ params }: PageProps<"/customers/[id
         title={`${c.name} (${c.code})`}
         actions={
           <>
+            <DeleteRecordLink role={user.role} type="Customer" id={c.id} />
             <Link href={`/shipping-orders/new?customer=${c.id}`} className={btnCls}>
               + New shipping order
             </Link>

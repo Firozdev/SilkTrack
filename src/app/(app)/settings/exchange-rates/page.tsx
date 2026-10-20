@@ -1,6 +1,7 @@
 import { ActionForm } from "@/components/action-form";
 import { RateChart } from "@/components/rate-chart";
 import { Card, Field, Table, inputCls, tdCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
 import { BD_TZ, fmtDateTime, fmtDay, toYmd, today } from "@/lib/dates";
 import { fmtRate } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -47,7 +48,7 @@ export default async function ExchangeRatesPage() {
         </Card>
       </div>
       <Card title="Rate history" className="mt-5">
-        <Table head={["Date", "Rate", "Buying", "Selling", "Note", "Updated by", "Updated at"]} empty="No rates yet.">
+        <Table head={["Date", "Rate", "Buying", "Selling", "Note", "Updated by", "Updated at", ""]} empty="No rates yet.">
           {rates.map((r) => (
             <tr key={r.id}>
               <td className={tdCls}>{fmtDay(r.effectiveDate)}</td>
@@ -57,6 +58,9 @@ export default async function ExchangeRatesPage() {
               <td className={tdCls}>{r.note}</td>
               <td className={tdCls}>{r.updatedBy.name}</td>
               <td className={tdCls}>{fmtDateTime(r.updatedAt, user.timezone)}</td>
+              <td className={tdCls}>
+                <DeleteRecordLink role={user.role} type="ExchangeRate" id={r.id} back="/settings/exchange-rates" small />
+              </td>
             </tr>
           ))}
         </Table>

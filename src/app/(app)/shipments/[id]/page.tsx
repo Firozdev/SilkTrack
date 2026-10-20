@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/action-form";
 import { A, Alert, Badge, Card, Dl, Field, PageHeader, Table, btnCls, inputCls, tdCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
 import { fmtDateTime, fmtDay, toYmd } from "@/lib/dates";
 import { docNo, fmtBdt, fmtCbm, fmtKg, fmtNum, fmtRate, humanize } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -55,9 +56,12 @@ export default async function ShipmentPage({ params }: PageProps<"/shipments/[id
           </span>
         }
         actions={
-          <a href={`/shipments/${s.id}/packing-list`} className={btnCls}>
-            ⬇ Packing list (Excel CSV)
-          </a>
+          <>
+            <DeleteRecordLink role={user.role} type="Shipment" id={s.id} />
+            <a href={`/shipments/${s.id}/packing-list`} className={btnCls}>
+              ⬇ Packing list (Excel CSV)
+            </a>
+          </>
         }
       />
       {warning && <Alert tone="warn">⚠ {warning}</Alert>}

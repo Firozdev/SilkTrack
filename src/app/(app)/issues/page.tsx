@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { ActionForm } from "@/components/action-form";
 import { A, Badge, Card, PageHeader, btnCls, inputCls } from "@/components/ui";
+import { DeleteRecordLink } from "@/components/delete-record";
 import { fmtDateTime } from "@/lib/dates";
 import { docNo, humanize } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -54,6 +55,7 @@ export default async function IssuesPage({ searchParams }: PageProps<"/issues">)
               <div className="text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <b>{docNo("issue", i.number)}</b> <Badge value={i.type} /> <Badge value={i.status} /> <span className="text-gray-500">{humanize(i.source)}</span>
+                  <DeleteRecordLink role={user.role} type="Issue" id={i.id} back="/issues" small />
                 </div>
                 <p className="mt-1">{i.description}</p>
                 <div className="mt-1 text-xs text-gray-500">

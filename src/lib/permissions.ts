@@ -31,6 +31,7 @@ export const ACTIONS = [
   "agent:manage", // create agent logins, assign customers to agents
   "price:viewSelling", // BDT selling price, margin, profit (PURCHASE: selling only via User.canSetSellingPrice)
   "cost:viewChina", // RMB cost
+  "record:delete", // move any record to Trash, restore it, delete it forever (Admin only)
 ] as const;
 
 export type Action = (typeof ACTIONS)[number];
